@@ -16,6 +16,8 @@ The project ships as an **HTTP service, CLI, management console, and Docker/Comp
 
 Most linked technical guides and the website are currently in Chinese.
 
+To start with a complete application, visit the independent [examples repository](https://github.com/orchpact/examples). Fieldnote, Frame Studio, Story Atelier, and Poetry Atelier each have their own UI, workflow, and guide. A shared launcher prepares the local database, accounts, resource installation, and signing gateways.
+
 ## Two layers of collaboration, one durable runtime
 
 ```mermaid

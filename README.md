@@ -14,6 +14,8 @@
 
 本项目以 **HTTP 服务、CLI、管理台和 Docker/Compose** 发行，Python wheel 是服务的安装载体。公开集成边界是工作流 JSON、HTTP API、签名客户端与 CLI。技术文档和实现位于本仓库；官网由独立的 [orchpact.github.io 仓库](https://github.com/orchpact/orchpact.github.io)维护。项目采用 [MIT 许可证](LICENSE)。
 
+想先搭建一个完整应用，可从独立的 [examples 示例仓库](https://github.com/orchpact/examples)开始：观测、映序、拾页和诗境各有自己的界面、工作流与操作指南，统一启动脚本自动准备本机数据库、账号、资源安装和签名网关。
+
 ## 两层协作，一个持久化运行时
 
 ```mermaid
