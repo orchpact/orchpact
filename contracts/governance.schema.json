@@ -1,0 +1,52 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "input_schema": {
+      "additionalProperties": true,
+      "title": "Input Schema",
+      "type": "object"
+    },
+    "leader_outputs": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Leader Outputs",
+      "type": "object"
+    },
+    "max_output_bytes": {
+      "anyOf": [
+        {
+          "maximum": 10485760,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Output Bytes"
+    },
+    "budget_points": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Budget Points"
+    },
+    "independent_review": {
+      "default": false,
+      "title": "Independent Review",
+      "type": "boolean"
+    }
+  },
+  "title": "GovernancePolicy",
+  "type": "object"
+}

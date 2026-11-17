@@ -1,0 +1,64 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "subject": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Subject",
+      "type": "string"
+    },
+    "actions": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Actions",
+      "type": "array"
+    },
+    "capabilities": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 8,
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "expires": {
+      "title": "Expires",
+      "type": "number"
+    },
+    "parent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Id"
+    },
+    "budget_points": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Budget Points"
+    }
+  },
+  "required": [
+    "subject",
+    "actions",
+    "expires"
+  ],
+  "title": "MandateInput",
+  "type": "object"
+}

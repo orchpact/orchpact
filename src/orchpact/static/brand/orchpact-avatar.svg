@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+<title id="title">Orchpact avatar</title>
+<desc id="description">Two interlocking workflow tracks form an O-shaped pact seal. Full square background and safe margins for circular cropping.</desc>
+<rect width="1024" height="1024" fill="#173D32"/>
+<g transform="scale(10.6666666667)">
+<g fill="none" stroke-width="12" stroke-linejoin="round">
+<path stroke="#F4F4EC" d="M57 21H36L21 36V60L36 75H48V54H39"/>
+<path stroke="#D4E7A3" d="M39 75H60L75 60V36L60 21H48V42H57"/>
+</g>
+</g>
+</svg>

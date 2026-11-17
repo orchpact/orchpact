@@ -1,0 +1,4 @@
+# 内部用量积分，不等于供应商金额；修改后重启，仅影响新调用。
+[credits]
+tokens_per_point = 1000
+search_points = 10

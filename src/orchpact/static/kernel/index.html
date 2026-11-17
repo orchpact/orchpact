@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Orchpact · 工作流内核</title><link rel="icon" href="/static/favicon.svg"><link rel="stylesheet" href="/static/kernel/style.css"></head>
+<body><header><a class="brand" href="/admin/">Orchpact <small>序契 · 可复用的组织协作工作流内核</small></a><div><select id="workspace" aria-label="当前工作空间"></select><a href="/account/">账号与积分</a><a href="/api/docs">API</a><button id="refresh">刷新</button><button id="logout">退出</button></div></header>
+<div class="layout"><nav aria-label="管理导航"><a href="#overview">工作总览</a><a href="#attention">待处理</a><a href="#organizations">组织与角色</a><a href="#workflows">工作流目录</a><a href="#applications">应用绑定</a><a href="#projects">项目执行</a><a href="#policies">治理规则</a><a href="#providers">提供者配置</a><a href="/account/">账号与工作空间 ↗</a></nav><main><div id="notice" role="status" aria-live="polite"></div><section id="content" aria-live="polite"></section></main></div>
+<dialog id="editor"><form id="edit-form"><div class="dialog-head"><h2 id="edit-title"></h2><button id="close-editor" type="button" aria-label="关闭">×</button></div><p id="edit-help"></p><label for="edit-json">JSON 配置</label><textarea id="edit-json" rows="18" spellcheck="false" required></textarea><p id="edit-error" role="alert"></p><button id="save-editor" type="submit">保存</button></form></dialog>
+<script src="/static/kernel/attention.js"></script>
+<script src="/static/kernel/app.js"></script></body></html>

@@ -1,0 +1,58 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "workflow_id": {
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$",
+      "title": "Workflow Id",
+      "type": "string"
+    },
+    "workflow_revision": {
+      "minimum": 1,
+      "title": "Workflow Revision",
+      "type": "integer"
+    },
+    "expected_revision": {
+      "minimum": 0,
+      "title": "Expected Revision",
+      "type": "integer"
+    },
+    "enabled": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Enabled"
+    },
+    "require_signature": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Require Signature"
+    }
+  },
+  "required": [
+    "name",
+    "workflow_id",
+    "workflow_revision",
+    "expected_revision"
+  ],
+  "title": "WorkflowBinding",
+  "type": "object"
+}

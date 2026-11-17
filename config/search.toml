@@ -1,0 +1,18 @@
+# 每个引擎请求独立计次数/积分。仅启用已配置密钥的来源。
+[search]
+mode = "aggregate" # aggregate合并检索；fallback仅在失败/空结果时换下一来源
+sources = ["deepseek", "you", "tavily"]
+max_results = 5 # 每引擎最多返回条数；不影响单次平台积分
+fetch_top = 0 # 0关闭；1–3用DeepSeek抓取前N个真实结果，每页另计一次请求/10积分
+
+[providers.deepseek]
+enabled = "auto"
+key_env = "DEEPSEEK_API_KEY"
+
+[providers.you]
+enabled = "auto"
+key_env = "YDC_API_KEY"
+
+[providers.tavily]
+enabled = "auto"
+key_env = "TAVILY_API_KEY"

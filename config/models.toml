@@ -1,0 +1,20 @@
+# Models are optional until execution. Supply model IDs and server-side credentials.
+[models.text]
+enabled = false
+label = "Text"
+kind = "text"
+base_url = "https://api.example.com/v1"
+model = "configure-your-model"
+key_env = "MODEL_API_KEY"
+json_mode = true
+priority = 10
+
+[models.image]
+enabled = false
+label = "Image"
+kind = "image"
+provider = "openai_compatible"
+base_url = "https://api.example.com/v1"
+model = "configure-your-image-model"
+key_env = "IMAGE_API_KEY"
+priority = 20

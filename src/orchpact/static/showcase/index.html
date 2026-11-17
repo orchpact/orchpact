@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f3f1e9">
+<meta name="description" content="Orchpact，开源、可自托管的组织协作工作流引擎。定义职责与交付规则，让不同的人、团队和应用分别绑定资源、独立执行。">
+<meta property="og:title" content="Orchpact · 把目标变成可验收的交付">
+<meta property="og:description" content="共享工作流定义，分别绑定资源，独立保留执行与验收记录。">
+<title>Orchpact · 序契 · 可复用的组织协作工作流</title>
+<link rel="icon" href="/about/mark.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/about/style.css">
+<script src="/about/app.js" defer></script>
+</head>
+<body id="top">
+<a class="skip-link" href="#main">跳到正文</a>
+<header class="site-header wrap">
+  <a class="brand" href="#top" aria-label="Orchpact 首页"><img src="/about/orchpact-logo.svg" width="145" height="34" alt="Orchpact"></a>
+  <nav aria-label="主导航"><a href="#reuse">工作流复用</a><a href="#execution">运行方式</a><a href="#governance">授权与验收</a><a href="#architecture">系统架构</a></nav>
+  <a class="header-action" href="#start">从这里开始 <span aria-hidden="true">↗</span></a>
+</header>
+<main id="main">
+  <section class="hero wrap" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <p class="eyebrow"><span class="signal"></span> DEFINE ONCE. RUN IN YOUR CONTEXT.</p>
+      <h1 id="hero-title">把一个目标，<br>变成<span>可验收</span>的交付。</h1>
+      <p class="hero-intro">Orchpact（序契）是开源、可自托管的组织协作工作流引擎。<br>定义职责与交付规则，由不同的人、团队和应用分别绑定资源、独立执行。</p>
+      <div class="hero-actions"><a class="button button-dark" href="#execution">看一次协作如何完成 <span aria-hidden="true">↓</span></a><a class="text-link" href="#architecture">认识内核 <span aria-hidden="true">↗</span></a></div>
+      <div class="hero-meta"><span>单机运行</span><span>PostgreSQL</span><span>MIT License</span></div>
+    </div>
+    <figure class="hero-sheet" aria-labelledby="sheet-caption">
+      <div class="sheet-head"><span class="mono">ORCHPACT / EXECUTION SHEET</span><span class="sheet-number">001</span></div>
+      <div class="sheet-goal"><span class="tiny-label">委托目标</span><strong>整理资料，给出有依据的结论。</strong></div>
+      <div class="sheet-origins"><span>预定义计划</span><span class="origin-join" aria-hidden="true">↘ &nbsp; ↙</span><span>自主规划</span></div>
+      <div class="sheet-graph">
+        <div class="sheet-task"><span class="task-mark" aria-hidden="true">01</span><div><strong>资料整理</strong><small>交付来源与证据</small></div><span class="task-tick" aria-hidden="true">✓</span></div>
+        <span class="sheet-connector" aria-hidden="true">↓</span>
+        <div class="sheet-task"><span class="task-mark" aria-hidden="true">02</span><div><strong>形成结论</strong><small>引用真实上游文件</small></div><span class="task-tick" aria-hidden="true">✓</span></div>
+        <span class="sheet-connector" aria-hidden="true">↓</span>
+        <div class="sheet-task sheet-review"><span class="task-mark" aria-hidden="true">03</span><div><strong>独立审校</strong><small>核对当前产物版本</small></div><span class="task-tick" aria-hidden="true">✓</span></div>
+        <div class="repair-annotation"><span aria-hidden="true">↶</span> 按缺口定向返工</div>
+      </div>
+      <div class="sheet-delivery"><svg viewBox="0 0 24 28" width="24" height="28" aria-hidden="true"><path d="M3 1h12l6 6v20H3zM15 1v7h6M7 14h10M7 18h10M7 22h6" fill="none" stroke="currentColor" stroke-width="1.3"/></svg><div><strong>report.md <span>修订稿</span></strong><small>文件 + 来源 + 验收记录</small></div><span class="delivery-seal">此稿<br>已验收</span></div>
+      <figcaption id="sheet-caption"><span>一张任务图，贯穿执行与验收。</span><span class="mono">架构示意</span></figcaption>
+    </figure>
+  </section>
+
+  <section class="workflow-reuse wrap" id="reuse" aria-labelledby="reuse-title">
+    <div class="section-heading"><p class="eyebrow">DEFINE / BIND / EXECUTE</p><h2 id="reuse-title">定义一次，<br>各自运行。</h2><p>把流程规则分享出去。<br>让使用方保留自己的资源、数据与决定。</p></div>
+    <div class="workflow-layers">
+      <article><span class="mono">01 / DEFINITION</span><h3>共享的是规则。</h3><p>用稳定职责别名表达角色、依赖、交付契约与审校；模型需求写成能力槽位。</p><div class="workflow-example"><strong>evidence-review.json</strong><small>输入 Schema · 任务图 · 审校门 · 有界返工</small></div></article>
+      <article><span class="mono">02 / BINDING</span><h3>应用引用，空间绑定。</h3><p>多个独立应用固定引用同一工作流修订；各空间再选择本地模型，保留各自的账号与运行边界。</p><div class="workflow-example"><strong>固定修订 → 独立应用 → 空间模型</strong><small>应用引用更新与空间安装升级分别确认</small></div></article>
+      <article><span class="mono">03 / EXECUTION</span><h3>每次执行独立留痕。</h3><p>本次输入、付款人、调用、产物与验收分别记录；共享定义不会混合运行权限和费用。</p><div class="workflow-example"><strong>定义指纹 + 绑定快照</strong><small>旧执行保留原版本，定义升级显式进行</small></div></article>
+    </div>
+    <p class="workflow-footnote">管理台、API 与客户端提供不同入口。当前执行能力围绕模型协作和文件交付；人工资格解析与通用异常分支语法仍在完善。</p>
+  </section>
+
+  <section class="relationships wrap" aria-labelledby="relationships-title">
+    <div class="section-index"><span class="mono">01 / THE ORGANIZATION</span><h2 id="relationships-title">组织有分工，<br>行动有授权。</h2></div>
+    <div class="relationship"><span class="relation-number">01</span><h3>职责</h3><p>组织与角色，定义长期负责什么。</p><small>UNIT / AGENT</small></div>
+    <div class="relationship"><span class="relation-number">02</span><h3>参与</h3><p>项目参与，记录这次由谁协作。</p><small>PARTICIPATION</small></div>
+    <div class="relationship"><span class="relation-number">03</span><h3>授权</h3><p>动作、能力、期限与额度，决定能做什么。</p><small>MANDATE</small></div>
+    <p class="relationship-note">三种关系分别建模。上下级关系不会自动带来委派、调用或验收权限。</p>
+  </section>
+
+  <section class="execution-section" id="execution" aria-labelledby="execution-title">
+    <div class="wrap">
+      <div class="execution-heading"><div><p class="eyebrow">02 / ONE EXECUTION GRAPH</p><h2 id="execution-title">两种起点，<br>同一套执行规则。</h2></div><div class="execution-intro"><p>计划可以预先定义，也可以由模型提出。<br>工作项、依赖、授权、产物和验收，都进入同一张任务图。</p><div class="plan-switch" role="group" aria-label="选择计划来源"><button type="button" data-plan="fixed" aria-pressed="true">固定协作</button><button type="button" data-plan="autonomous" aria-pressed="false">自主规划</button></div><p class="plan-description" id="plan-description">在组织包里预先声明计算与审校职责，按明确依赖推进。</p></div></div>
+      <div class="execution-lab">
+        <div class="lab-toolbar"><span><i class="signal"></i> 交互示意 <span class="toolbar-note">/ 合成记录，不调用模型</span></span><div class="scenario-switch" role="group" aria-label="选择执行情景"><button type="button" data-scenario="normal" aria-pressed="true">顺利交付</button><button type="button" data-scenario="repair" aria-pressed="false">定向返工</button><button type="button" data-scenario="unknown" aria-pressed="false">结果待核定</button></div></div>
+        <div class="demo-body">
+          <div class="demo-graph-area">
+            <div class="demo-goal"><span class="tiny-label">本次委托</span><p>汇总两份记录，给出总数与来源。</p><div><span>来源 A <b>3</b></span><span>来源 B <b>5</b></span><span>预期总数 <b>8</b></span></div></div>
+            <div class="work-graph" aria-label="受理、计算、独立审校与文件交付的统一任务图">
+              <div class="work-node" data-node="admit" data-status="active"><span class="node-order">00</span><strong>受理委托</strong><small>身份 · 输入 · 授权</small><span class="node-status">进行中</span></div>
+              <span class="graph-edge" aria-hidden="true">↓</span>
+              <div class="work-node" data-node="work" data-status="idle"><span class="node-order">01</span><strong>计算汇总</strong><small>result.json</small><span class="node-status">待执行</span></div>
+              <span class="graph-edge" aria-hidden="true">↓</span>
+              <div class="work-node" data-node="review" data-status="idle"><span class="node-order">02</span><strong>独立审校</strong><small>audit.json</small><span class="node-status">待执行</span></div>
+              <span class="graph-edge" aria-hidden="true">↓</span>
+              <div class="work-node" data-node="deliver" data-status="idle"><span class="node-order">03</span><strong>文件交付</strong><small>绑定当前验收</small><span class="node-status">待执行</span></div>
+              <div class="graph-repair" id="graph-repair" hidden><span aria-hidden="true">↶</span> 只返工有缺口的工作项</div>
+            </div>
+            <p class="graph-foundation"><span aria-hidden="true">◇</span> 每次新行动前，重新检查授权、能力与预算。</p>
+          </div>
+          <div class="demo-detail">
+            <div class="demo-step-label"><span class="mono" id="step-number">STEP 01 / 05</span><span class="state-tag" id="step-state">准入检查</span></div>
+            <div class="step-copy" aria-live="polite" aria-atomic="true"><h3 id="step-title">先把委托的边界写清楚。</h3><p id="step-description">确认发起者、Workspace、输入契约和行动授权，再创建工作项。组织关系不会替代授权。</p></div>
+            <div class="artifact-preview"><div class="artifact-bar"><span id="artifact-name">委托契约</span><span id="artifact-version">INPUT</span></div><pre id="artifact-content">目标：汇总记录并列明来源
+输入：A = 3，B = 5
+交付：总数 + 来源编号
+验收：计算与独立审校</pre><p id="artifact-note">示意数据始终只保留在本页。</p></div>
+            <div class="demo-controls"><button type="button" class="play-button" id="play-button"><span id="play-symbol" aria-hidden="true">▶</span><span id="play-label">播放示意</span></button><button type="button" class="next-button" id="next-button">下一步 <span aria-hidden="true">→</span></button></div>
+          </div>
+        </div>
+        <div class="step-timeline" id="step-timeline" role="group" aria-label="直接查看演示步骤"></div>
+      </div>
+      <noscript><p class="no-script">固定计划和自主规划均依次经过受理、任务执行、独立审校与文件交付。审校不通过时保留旧产物并定向返工；外部结果未知时保留预留，先核对真实回执。启用 JavaScript 可逐步查看示意。</p></noscript>
+    </div>
+  </section>
+
+  <section class="governance-section wrap" id="governance" aria-labelledby="governance-title">
+    <div class="section-heading"><p class="eyebrow">03 / ACCOUNTABLE BY DESIGN</p><h2 id="governance-title">每次行动，<br>都有明确的边界。</h2><p>从发起委托到恢复中断，保留责任、版本和依据。</p></div>
+    <div class="governance-rules">
+      <article class="rule"><span class="rule-index mono">BEFORE / 01</span><h3>授权限定行动。</h3><p>调用能力受角色与授权共同约束。转授只能收窄范围；父授权撤销后，后续子授权行动也会失效。</p><div class="rule-evidence"><span>动作</span><span>能力</span><span>期限</span><span>额度</span></div></article>
+      <article class="rule"><span class="rule-index mono">DELIVERY / 02</span><h3>验收绑定版本。</h3><p>产物不可覆盖。审校与人工验收绑定具体文件、哈希和版本；修订后的成果需要对应的新验收。</p><div class="version-evidence"><span>初稿</span><i aria-hidden="true">→</i><strong>修订稿</strong><span class="review-stamp">重新验收</span></div></article>
+      <article class="rule"><span class="rule-index mono">RECOVERY / 03</span><h3>恢复尊重事实。</h3><p>先预留，再按实际回执结算。费用不确定时保持预留；重启先恢复回执，避免自动重发带来的重复费用。</p><div class="recovery-evidence"><span class="signal"></span> 未知结果 <i aria-hidden="true">→</i> 核对回执 <i aria-hidden="true">→</i> 再作决定</div></article>
+    </div>
+    <p class="governance-footnote">确定性契约校验由平台规则完成；专业审校作为独立工作项配置。项目可以保留部分成果，并明确列出尚未完成的缺口。</p>
+    <div class="contract-proof" id="contracts">
+      <div class="proof-heading"><div><p class="eyebrow">EXECUTABLE CONTRACTS</p><h3>让规则可以被验证。</h3></div><p>四类行为，七项回归。<br>检查执行边界，保留可审阅的结果。</p></div>
+      <ol class="proof-cases"><li><span>01 / 授权</span><strong>越权转授被拒绝</strong><p>权限不能扩大，父授权撤销后子授权行动失效。</p></li><li><span>02 / 验收</span><strong>旧验收不能放行修订稿</strong><p>验收绑定具体产物、哈希与执行代次。</p></li><li><span>03 / 恢复</span><strong>未知结果不自动重发</strong><p>保留原付款人和预留，先核对真实回执。</p></li><li><span>04 / 账务</span><strong>重复回执只结算一次</strong><p>记录重复到达，仍遵守同一幂等边界。</p></li></ol>
+      <div class="proof-command"><code id="contract-command">uv run python evals/verify_contracts.py --output /tmp/orchpact-contracts.json</code><button type="button" id="copy-contract">复制验证命令 ↗</button></div>
+      <p class="proof-note" id="contract-copy-status" role="status">在源码 orchpact/ 目录运行，需准备隔离 PostgreSQL 测试环境。外部响应为模拟，不产生付费调用，也不构成模型质量证据。</p>
+    </div>
+  </section>
+
+  <section class="architecture-section" id="architecture" aria-labelledby="architecture-title">
+    <div class="wrap">
+      <div class="section-heading architecture-heading"><div><p class="eyebrow">04 / INSIDE ORCHPACT</p><h2 id="architecture-title">小而完整的内核。<br>清楚的职责边界。</h2></div><p>定义表达流程，使用方绑定资源，内核维护执行规则。<br>团队按声明装配为独立 Crew，Orchpact 维护协作契约与执行边界。</p></div>
+      <div class="architecture-board">
+        <div class="architecture-map" role="group" aria-label="选择架构模块以查看职责">
+          <div class="architecture-entry"><span>可复用工作流 / API / 客户端</span><small>输入契约 · 业务职责 · 交付要求</small></div>
+          <span class="architecture-arrow" aria-hidden="true">↓ 统一接口 / 应用签名 / Workspace</span>
+          <button type="button" class="module module-interface" data-module="interfaces" aria-pressed="false"><span>interfaces</span><small>身份边界与命令入口</small><b aria-hidden="true">↗</b></button>
+          <div class="core-modules"><button type="button" class="module module-kernel" data-module="kernel" aria-pressed="true"><span>kernel</span><small>契约 · 授权 · 领域规则</small><b aria-hidden="true">↗</b></button><button type="button" class="module" data-module="services" aria-pressed="false"><span>services</span><small>统一任务图 · 调度 · 验收</small><b aria-hidden="true">↗</b></button></div>
+          <div class="adapter-modules"><button type="button" class="module" data-module="adapters" aria-pressed="false"><span>adapters</span><small>CrewAI · 提供者 · 文件</small><b aria-hidden="true">↗</b></button></div>
+          <div class="architecture-storage"><span><b>PostgreSQL</b><small>状态 / 账务 / 审计</small></span><i aria-hidden="true">+</i><span><b>本地文件</b><small>产物 / 回执 / 哈希</small></span></div>
+        </div>
+        <aside class="module-detail" aria-live="polite" aria-atomic="true"><span class="mono" id="module-number">01 / DOMAIN</span><h3 id="module-title">让执行有共同的规则。</h3><p id="module-description">核心领域保留职责、授权、任务与验收契约。预定义计划和自主规划，都遵守相同的结构与边界。</p><ul id="module-points"><li>三种关系分别建模</li><li>计划变更有版本与理由</li><li>当前产物对应当前验收</li></ul><div class="module-bottom"><span class="module-dot"></span><span id="module-tag">纯领域结构与校验</span></div></aside>
+      </div>
+      <div class="operating-model"><span class="mono">OPERATING MODEL</span><p><strong>一个主进程。</strong>数据库与文件目录成对绑定；独占锁在初始化前获得，业务、账务和审计在同一事务里提交。</p><span class="operating-mark" aria-hidden="true">↳</span></div>
+      <details class="current-boundaries"><summary>了解当前边界 <span aria-hidden="true">+</span></summary><div><p>当前实现面向单机、单主进程，尚未提供远程 Worker、多主调度或第三方代码沙箱。生成的代码作为文件交付，不由平台自动执行、安装或部署。</p><p>专业审校可能产生独立模型调用；内部积分是计量标准，不等于供应商金额。这里展示的是执行机制，实际内容质量需要用真实任务单独评估。</p></div></details>
+    </div>
+  </section>
+
+  <section class="start-section wrap" id="start" aria-labelledby="start-title">
+    <div class="start-copy"><p class="eyebrow">05 / SHARE YOUR WORKFLOW</p><h2 id="start-title">从一个工作流定义开始。</h2><p>用 JSON 定义职责、输入输出与独立审校。<br>发布修订，绑定消费应用，再预览资源并安装到各自空间。</p><p class="start-note">基于 Orchpact 源码运行。先准备独立 PostgreSQL 数据库，再配置实例连接；模型与额度按需设置。</p><div class="license-note"><span class="license-mark">MIT</span><span>小内核，明确边界。<br>为理解、修改和再创造而构建。</span></div></div>
+    <div class="quickstart"><div class="quickstart-head"><span class="mono">QUICK START / FROM SOURCE</span><button type="button" id="copy-command" aria-label="复制启动命令">复制 <span aria-hidden="true">↗</span></button></div><pre><code id="start-command">cd orchpact
+uv sync --frozen
+<span class="code-comment"># 离线校验公开工作流示例</span>
+uv run orchpact workflow-check examples/workflows/evidence-review.json
+uv run orchpact --root ./instance init
+<span class="code-comment"># 配置 instance/.env 中的 ORCHPACT_DATABASE_URL</span>
+uv run orchpact --root ./instance check
+uv run orchpact --root ./instance serve</code></pre><p id="copy-status" role="status">无模型也可以启动配置管理面；执行前绑定所需能力。</p></div>
+  </section>
+</main>
+<footer class="site-footer wrap"><a class="brand" href="#top"><img src="/about/orchpact-logo.svg" width="127" height="30" alt="Orchpact"></a><span>定义协作，按约交付。</span><div><span class="mono">ORCHPACT / MIT</span><!-- platform-only --><a href="/admin/">打开管理台 ↗</a><!-- /platform-only --><a href="#top">回到顶部 ↑</a></div></footer>
+</body>
+</html>

@@ -1,0 +1,37 @@
+.env
+.venv/
+var/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+*.egg-info/
+backups/
+
+# Local secrets, runtime state and build caches
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+var/
+backups/
+*.db
+*.db-wal
+*.db-shm
+
+# Application signing private keys
+*-private-key.pem
+application-private.pem
+
+# Private operational evidence stays outside public source distributions.
+/artifacts/
+/evals/results/
+
+# PostgreSQL backups and local test clusters
+*.dump
+.pgdata/

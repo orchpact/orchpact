@@ -1,0 +1,44 @@
+name: orchpact-standalone
+services:
+  postgres:
+    image: postgres:18-bookworm
+    environment:
+      POSTGRES_DB: orchpact
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run docker/configure.py first}
+      ORCHPACT_POSTGRES_PASSWORD: ${ORCHPACT_DB_PASSWORD:?Run docker/configure.py first}
+    volumes:
+      - database:/var/lib/postgresql
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/orchpact.sql:ro
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d orchpact]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  orchpact:
+    image: ${ORCHPACT_IMAGE:-orchpact-standalone:local}
+    build: .
+    environment:
+      ORCHPACT_API_TOKEN: ${ORCHPACT_API_TOKEN:?Run docker/configure.py first}
+      ORCHPACT_DATABASE_URL: postgresql://orchpact:${ORCHPACT_DB_PASSWORD:?Run docker/configure.py first}@postgres:5432/orchpact
+    ports: ["127.0.0.1:${ORCHPACT_PORT:-8780}:8780"]
+    volumes: [files:/var/lib/orchpact]
+    networks: [default, database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8780/readyz',timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+    restart: unless-stopped
+networks:
+  database:
+    internal: true
+volumes:
+  database:
+  files:

@@ -1,0 +1,4 @@
+# Optional frontend mounts. Paths are relative to the instance root.
+# [frontends.example]
+# route = "/example"
+# directory = "/path/to/example/dist"

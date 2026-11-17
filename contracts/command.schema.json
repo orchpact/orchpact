@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Key",
+      "type": "string"
+    },
+    "action": {
+      "enum": [
+        "plan",
+        "amend",
+        "decide",
+        "publish",
+        "review",
+        "retry",
+        "cancel",
+        "reply"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "revision": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Revision"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    }
+  },
+  "required": [
+    "key",
+    "action"
+  ],
+  "title": "Command",
+  "type": "object"
+}
