@@ -4,3 +4,161 @@ body{font-family:"Avenir Next","PingFang SC","Microsoft YaHei",sans-serif}h1,h2,
 
 .action-link{display:inline-block;padding:8px 12px;border:1px solid var(--line);border-radius:5px;background:white}.action-link:hover{border-color:var(--accent)}
 .panel{overflow-wrap:anywhere}
+
+.organization-card h2,
+.organization-card h3 {
+ margin: 0;
+}
+.organization-card h3 {
+ margin-top: 16px;
+ padding-top: 12px;
+ border-top: 1px solid var(--line);
+}
+.organization-card ol,
+.organization-card ul {
+ margin: 6px 0 14px;
+ padding-inline-start: 24px;
+}
+.organization-card li + li {
+ margin-top: 6px;
+}
+
+#organization-editor {
+ padding: 0;
+ color: var(--ink);
+ background: var(--paper);
+ width: min(760px, 94vw);
+}
+#organization-editor form {
+ display: flex;
+ flex-direction: column;
+ max-height: 88vh;
+ max-height: 88dvh;
+}
+.organization-dialog-head,
+.organization-dialog-footer {
+ padding: 14px 24px;
+ flex: none;
+}
+.organization-dialog-body {
+ min-height: 0;
+ overflow: auto;
+}
+.organization-dialog-head {
+ border-bottom: 1px solid var(--line);
+}
+.organization-dialog-head h2 {
+ margin: 0;
+ overflow-wrap: anywhere;
+}
+.organization-dialog-footer {
+ border-top: 1px solid var(--line);
+}
+.organization-dialog-footer .actions {
+ justify-content: flex-end;
+}
+.organization-dialog-footer p {
+ margin: 0 0 10px;
+ overflow-wrap: anywhere;
+}
+.organization-fields {
+ border: 0;
+ padding: 20px 24px;
+ margin: 0;
+ min-width: 0;
+}
+.organization-fields label + label,
+.organization-grid + label,
+.organization-capabilities + label {
+ margin-top: 14px;
+}
+.organization-fields label > :is(input:not([type=checkbox]), select, textarea) {
+ display: block;
+ width: 100%;
+ margin: 4px 0 0;
+ font: inherit;
+}
+.organization-fields :is(input, textarea):focus-visible {
+ outline: 2px solid var(--accent);
+ outline-offset: 2px;
+}
+.organization-grid {
+ display: grid;
+ grid-template-columns: 1fr 1fr;
+ gap: 14px;
+}
+.organization-grid > label + label {
+ margin: 0;
+}
+.organization-team {
+ margin-top: 24px;
+ padding-top: 16px;
+ border-top: 1px solid var(--line);
+}
+.organization-team h3 {
+ margin: 0;
+}
+.organization-team > p {
+ margin: 6px 0 12px;
+}
+.organization-team-fields {
+ margin: 0;
+ padding: 0;
+ border: 0;
+ min-width: 0;
+}
+.organization-member {
+ margin: 0 0 16px;
+ padding: 12px 16px 16px;
+ border: 1px solid var(--line);
+ border-radius: 6px;
+ min-width: 0;
+ background: #f6f7f1;
+}
+.organization-member legend {
+ padding: 0 6px;
+ color: var(--accent);
+ font-weight: 650;
+}
+.organization-member .actions {
+ margin-top: 14px;
+}
+.organization-capabilities {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 8px 14px;
+ border: 0;
+ margin: 14px 0 0;
+ padding: 0;
+ min-width: 0;
+}
+.organization-capabilities label + label {
+ margin: 0;
+}
+.organization-capabilities label,
+.organization-team .inline-check {
+ display: inline-flex;
+ align-items: center;
+ gap: 5px;
+}
+.organization-capabilities input,
+.organization-team input[type=checkbox] {
+ accent-color: var(--accent);
+}
+.organization-sr-only {
+ position: absolute;
+ width: 1px;
+ height: 1px;
+ clip-path: inset(50%);
+ overflow: hidden;
+}
+@media (max-width: 540px) {
+ .organization-grid {
+  grid-template-columns: 1fr;
+ }
+ .organization-dialog-head,
+ .organization-dialog-footer,
+ .organization-fields {
+  padding-inline: 14px;
+ }
+}

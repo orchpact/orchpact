@@ -41,7 +41,7 @@ class SiteTests(unittest.TestCase):
 
     def test_admin_console_available_only_on_management_surface(self):
         self.admin.post('/api/v1/session',json={'token':TOKEN}).raise_for_status()
-        for path in ('/static/kernel/app.js','/static/kernel/style.css'):
+        for path in ('/static/kernel/app.js','/static/kernel/style.css','/static/kernel/organizations.js'):
             self.assertEqual(self.admin.get(path).status_code,200,path)
             self.assertEqual(self.story.get(path).status_code,404,path)
         self.assertIn('/static/kernel/app.js',self.admin.get('/admin/').text)

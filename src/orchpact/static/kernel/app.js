@@ -6,7 +6,7 @@ const names={queued:'等待执行',running:'执行中',waiting:'等待依赖或�
 function tell(value,error=false){$('#notice').textContent=value;$('#notice').className=error?'error':'';}
 async function api(path,{method='GET',value,signal,headers={}}={}){
  const response=await fetch('/api/v1/'+path,{method,credentials:'same-origin',signal,headers:{'Content-Type':'application/json','X-Workspace-Id':$('#workspace').value,...headers},...(value===undefined?{}:{body:JSON.stringify(value)})});
- const data=await response.json();if(!response.ok){if(response.status===401)location.assign('/admin/');throw Object.assign(Error(data.detail||'请求失败'),{status:response.status});}return data;
+ const data=await response.json();if(!response.ok){if(response.status===401)location.assign('/admin/');const detail=Array.isArray(data.detail)?data.detail.map(item=>item.msg).join('；'):data.detail;throw Object.assign(Error(detail||'请求失败'),{status:response.status});}return data;
 }
 function heading(title,description,action=''){return `<div class="heading"><div><h1>${esc(title)}</h1><p class="muted">${esc(description)}</p></div>${action}</div>`;}
 function empty(text){return `<div class="panel muted">${esc(text)}</div>`;}
@@ -71,11 +71,8 @@ async function render(){
    content.innerHTML=heading('待处理','当前空间最近 100 个项目中的待办；分类不改变任务、授权或账务状态。')+`<div class="cards">${['receipt','accounting','review','question','execution'].map(kind=>`<div class="card"><div class="number">${attention.filter(x=>x.kind===kind).length}</div><small>${({receipt:'结果待确认',accounting:'费用待核定',review:'待独立验收',question:'待答复',execution:'执行需处理'})[kind]}</small></div>`).join('')}</div>`+(attention.length?attention.map(item=>`<article class="panel"><div class="row"><h2>${esc(item.application_id)} · ${esc(item.operation)}</h2><span class="badge">${esc(item.label)}</span></div><p>${esc(item.reason)}</p><p class="muted">${esc(item.action)}</p><small>记录 ${esc(item.reference)}</small><div class="actions"><a class="action-link" href="#projects/${esc(encodeURIComponent(item.project_id))}">打开项目 →</a>${['receipt','accounting'].includes(item.kind)?'<a class="action-link" href="/api/v1/requests/'+esc(encodeURIComponent(item.reference))+'?workspace='+esc(encodeURIComponent($('#workspace').value))+'">查看调用回执</a>':''}${item.kind==='accounting'?'<a class="action-link" href="/account/">账号与积分 ↗</a>':''}</div></article>`).join(''):empty('最近项目没有需要处理的事项。正常执行与等待依赖不会列为人工待办。'));return;
   }
   if(page==='organizations'){
-   content.innerHTML=heading('组织与角色','隶属关系描述长期职责。项目参与与行动授权分别记录。','<button id="new-unit" class="primary">创建组织</button>')+(state.units.length?state.units.map(u=>`<section class="panel"><div class="row"><h2>${esc(u.name)}</h2><small>v${u.version}</small></div><p>${esc(u.purpose)}</p>${u.crew?`<p class="muted">Crew 团队 · ${u.crew.members.length} 个岗位 · 顺序协作</p>${u.crew.members.map(m=>`<p>${esc(m.name)} · ${esc(m.role)} <small>${esc(m.key)}</small></p>`).join('')}`:''}<p class="muted">${esc(u.alias||u.id)}</p><div class="actions"><button data-edit-unit="${esc(u.id)}">编辑职责</button><button data-add-role="${esc(u.id)}">添加角色</button></div>${state.agents.filter(a=>a.unit_id===u.id&&!a.project_id).map(a=>`<p>${esc(a.name)} · ${esc(a.role)} <small>${esc(a.model_id)}</small></p>`).join('')}</section>`).join(''):empty('可以从空白创建组织，也可以先安装一个组织包。'));
-   const model=state.models.find(m=>m.kind==='text')?.id||'';
-   $('#new-unit').onclick=()=>edit('创建组织',{name:'',purpose:'',prompt:'',parent_id:null,model_id:model,crew:null},'crew 可声明顺序协作岗位；每次执行创建独立 Crew 与参与岗位 Agent。',value=>api('organizations',{method:'POST',value}));
-   for(const b of content.querySelectorAll('[data-edit-unit]'))b.onclick=()=>{const u=state.units.find(x=>x.id===b.dataset.editUnit);edit('编辑职责',Object.fromEntries(['name','purpose','prompt','parent_id','model_id','crew'].map(k=>[k,u[k]])),'crew 声明团队岗位；变更只影响随后创建的工作项，已受理执行保留冻结名单。',value=>api('organizations/'+u.id,{method:'PUT',value}));};
-   for(const b of content.querySelectorAll('[data-add-role]'))b.onclick=()=>edit('添加岗位声明',{name:'',role:'',prompt:'',capabilities:['text','json'],model_id:model},'保存岗位职责声明，实际 Agent 在执行时创建。',value=>api('organizations/'+b.dataset.addRole+'/roles',{method:'POST',value}));return;
+   OrchpactOrganizations.show(content,state,{api,render,tell,heading,empty,esc,workspace:()=>$('#workspace').value});
+   return;
   }
   if(page==='projects'&&id){
    const run=state.projects.find(p=>p.id===id);if(!run){content.innerHTML=empty('当前空间未找到该项目。');return;}
