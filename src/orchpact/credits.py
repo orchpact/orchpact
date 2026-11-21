@@ -86,7 +86,8 @@ def measure(request):
 def summarize(requests):
     model_points = Decimal(0)
     search_points = Decimal(0)
-    result = dict(requests=0, model_requests=0, search_requests=0, model_tokens=0,
+    tool_points = Decimal(0)
+    result = dict(requests=0, model_requests=0, search_requests=0, tool_requests=0, model_tokens=0,
                   unmetered_model_requests=0, unsettled_requests=0, missing_policy_requests=0)
     for request in requests:
         credit = request.get('credits') or measure(request)
@@ -101,6 +102,9 @@ def summarize(requests):
         elif request['kind'] == 'search':
             result['search_requests'] += 1
             if credit['points'] is not None:search_points += Decimal(str(credit['points']))
-    return dict(result, points=points(model_points + search_points),
-                model_points=points(model_points), search_points=points(search_points),
+        elif request['kind'] == 'tool':
+            result['tool_requests'] += 1
+            if credit['points'] is not None:tool_points += Decimal(str(credit['points']))
+    return dict(result, points=points(model_points + search_points + tool_points),
+                model_points=points(model_points), search_points=points(search_points), tool_points=points(tool_points),
                 complete=not (result['unmetered_model_requests'] or result['unsettled_requests'] or result['missing_policy_requests']))

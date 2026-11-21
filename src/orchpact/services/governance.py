@@ -81,12 +81,16 @@ class Governance:
         self.s.db.event(c, project['id'], None, 'mandate.granted', mandate_id=key, subject=subject, issuer=ctx.subject)
         return key
 
-    def initial(self, c, project, subject):
+    def initial(self, c, project, subject, tool_slots=()):
         # Called only by admitted project creation, never from a model proposal.
         key = ident()
+        capabilities = ['text', 'json', 'search', 'image', 'image_reference']
+        capabilities += ['tool:' + slot for slot in tool_slots]
+        for frozen in tool_slots.values():
+            capabilities += frozen['definition']['required_permissions']
         c.execute('INSERT INTO mandates VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                   (key, project['workspace_id'], project['id'], subject, project['created_by'], None,
-                   dumps(sorted(self.ACTIONS)), dumps(['text', 'json', 'search', 'image', 'image_reference']),
+                   dumps(sorted(self.ACTIONS)), dumps(sorted(set(capabilities))),
                    None, now() + 86400 * 30, 0, now()))
         return key
 

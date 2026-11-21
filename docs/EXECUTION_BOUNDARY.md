@@ -65,6 +65,8 @@ flowchart TD
 
 - `search_evidence`：仅向冻结角色具有 `search` 能力的工作项提供，并检查剩余搜索额度。实际调用复用平台搜索提供者；各来源分别保存回执与费用。
 - `read_artifact`：仅在工作项有依赖交付时提供。只接受当前上下文中明确列出的产物 ID，再检查同一项目；不接受任意路径。结果保留文件哈希、清单和截断标记。
+- 工作流声明的通用工具：动态 Agent 调用仅向自身 `capabilities` 显式含 `tool:<槽位>` 的岗位提供。CrewAI 选择并调度 `BaseTool`，统一 Tool Runtime 再校验快照、Workspace/应用策略、参数和产物范围，执行唯一一次副作用并负责幂等、费用与恢复。工具授权不参与模型选择，同 Crew 岗位之间不共享。
+- 确定性 `kind=tool` 节点：由节点自身 `tool_ref` 授权，直接调用同一 Tool Runtime，不经过 CrewAI 行动循环。参数只接受固定 `$ref` 输入/当前已验收 Artifact 映射，候选结果必须是声明的 `files` JSON，再进入平台交付与验收。工具工作项和 attempt 使用 deterministic 标识，不产生模型请求或 CrewAI 记录。
 
 未声明执行团队的组织规划和接收阶段使用单岗位 Crew 生成受约束命令提案，不向其开放上述执行工具。图片调用继续使用平台图片提供者。工具集合由平台能力边界决定，工作流不会加载任意 Python 工具插件。
 
@@ -86,9 +88,15 @@ flowchart TD
 
 `crew_runs` 记录实际 Crew、参与名单与 Agent ID；`agent_steps` 通过 crew_run_id、member_key 和 runtime_agent_id 关联团队执行，并记录工作项、attempt、步骤序号、模型/工具类型、名称和状态。状态为 started、completed、failed 或 unknown。实际输出、工具参数和观察保存到配套私有 `var/agent-steps/`，不将内容写入事件或审计摘要。供应商原始回执仍保存在 `var/receipts/`，账务与原付款人机制保持独立。
 
+通用 Tool Runtime 的 `tool_invocations` 与 CrewAI `agent_steps` 是不同事实：前者负责外部副作用幂等、原付款人请求和恢复，后者负责 Agent 行动证据。通用工具私有回执位于 `var/tool-invocations/`。`prepare_role()` 只向具有本岗位 `tool:<槽位>` 授权的执行角色注入通用 Runtime；首次行动和调用共用 ID，幂等重放或 UNKNOWN 阻断的新行动在私有证据中关联原 tool_call_id。Agent 与确定性节点的幂等键均由工作项、槽位和规范化参数稳定派生，跨 attempt 相同调用不会重复执行或扣费；节点没有 agent_step。UNKNOWN 始终阻断，safe_only 只读明确失败只能经人工显式重试新增记录。
+
 查询 run 的 `agent_steps` 返回步骤元数据，沿用 run 的应用和 Workspace 授权。它用于解释 Agent 如何推进，不授予额外数据权限。
 
-重启只恢复已有证据与结算；正在执行的工作项变为 interrupted，缺少确认回执的步骤标为 unknown。系统不自动恢复框架检查点或重放工具。用户明确重试会创建新的 attempt，并继续受到原付款人、请求总额和工作流返工上限约束。
+重启只恢复已有证据与结算；正在执行的工作项变为 interrupted，缺少确认回执的步骤标为 unknown。声明 verification 的候选先恢复已有证据或 completed 验证回执，不在恢复中发起新验证。系统不自动恢复框架检查点或重放工具。用户明确重试会创建新的 attempt，并继续受到原付款人、请求总额和工作流返工上限约束。
+
+可信验证在数据库事务外执行。候选 Artifact 先固定身份但保持 running/pending，Verifier 的 PASS/FAIL/INCONCLUSIVE 与 checks 形成不可变证据后，才最终完成或失败。验收重新核对 Artifact ID、SHA-256、generation、契约摘要和 Verifier 版本，不能用生产者的 passed 报告、旧证据或人工 waive 冒充完整接受。
+
+确定性 FAIL 的结构化定位复用原 gate 的共享 repair 入口和失效传播，只处理目标、下游及必要上级汇总，保留 sibling 和历史证据。INCONCLUSIVE/UNKNOWN 不作为普通返工理由，返工次数继续受原计划上限约束。
 
 ## 验收要求
 

@@ -136,7 +136,8 @@ class Settings:
         return settings
 
     def choose(self, capabilities, preferred=None):
-        required = set(capabilities)
+        from .kernel.models import model_capabilities
+        required = set(model_capabilities(capabilities))
         choices = [p for p in self.active_profiles().values() if required <= set(p["capabilities"])]
         if preferred:
             choices = [p for p in choices if p["id"] == preferred]

@@ -11,6 +11,7 @@ const OrchpactOrganizations = (() => {
   image: '图像生成', image_reference: '参考图'
  };
  const teamCapabilities = ['text', 'json', 'search'];
+ const modelCapabilities = capabilities => capabilities.filter(capability => !capability.startsWith('tool:'));
 
  function control(scope, name) {
   return scope.querySelector('[name="' + name + '"]');
@@ -33,7 +34,7 @@ const OrchpactOrganizations = (() => {
  function modelOptions(select, models, caps, fallback, selected) {
   const options = [new Option(fallback, '')];
   for (const model of models) {
-   if (caps.every(capability => model.capabilities.includes(capability))) {
+   if (modelCapabilities(caps).every(capability => model.capabilities.includes(capability))) {
     const label = model.label && model.label !== model.id ? model.label + ' · ' + model.id : model.id;
     options.push(new Option(label, model.id));
    }
@@ -47,7 +48,7 @@ const OrchpactOrganizations = (() => {
 
  function validateModel(models, id, caps, label, allowUnconfigured = false) {
   if (allowUnconfigured && !id) return;
-  if (!models.some(model => (!id || model.id === id) && caps.every(cap => model.capabilities.includes(cap)))) {
+  if (!models.some(model => (!id || model.id === id) && modelCapabilities(caps).every(cap => model.capabilities.includes(cap)))) {
    throw Error(label + '没有匹配所选能力的可用模型。请选择其他模型，或到「提供者配置」启用模型。');
   }
  }
@@ -77,9 +78,10 @@ const OrchpactOrganizations = (() => {
    control(scope, key).value = role[key] ?? '';
   }
   const group = scope.querySelector('.organization-capabilities');
-  const caps = member ? teamCapabilities : [...new Set([
+  const caps = member ? [...teamCapabilities] : [...new Set([
    ...Object.keys(capabilityLabels), ...models.flatMap(model => model.capabilities)
   ])];
+  caps.push(...role.capabilities.filter(capability => capability.startsWith('tool:') && !caps.includes(capability)));
   for (const capability of caps) {
    const label = document.createElement('label');
    const input = document.createElement('input');
@@ -101,7 +103,7 @@ const OrchpactOrganizations = (() => {
   const name = requiredText(scope, 'name', team ? '岗位名称' : '角色名称');
   const role = requiredText(scope, 'role', '角色职责');
   const capabilities = capabilityValues(scope);
-  if (capabilities.length < 1 || capabilities.length > 4) throw Error('请选择 1 到 4 项能力');
+  if (capabilities.length < 1 || capabilities.length > 12) throw Error('请选择 1 到 12 项模型能力与工具授权');
   const model_id = control(scope, 'model_id').value || null;
   validateModel(models, model_id ?? team?.model, capabilities, '「' + name + '」');
   const value = {name, role, capabilities, model_id, prompt:control(scope, 'prompt').value};

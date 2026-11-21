@@ -1,8 +1,14 @@
 from typing import Literal, Annotated
+import re
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+
+def model_capabilities(capabilities):
+    return [capability for capability in capabilities if not capability.startswith('tool:')]
+
 
 class UnitInput(Strict):
     name: str = Field(min_length=1,max_length=100)
@@ -16,7 +22,7 @@ class AgentInput(Strict):
     name: str = Field(min_length=1,max_length=100)
     role: str = Field(min_length=1,max_length=2000)
     prompt: str = Field(default="",max_length=12000)
-    capabilities: list[str] = Field(default_factory=lambda:["text"],min_length=1,max_length=4)
+    capabilities: list[str] = Field(default_factory=lambda:["text"],min_length=1,max_length=12)
     model_id: str | None = None
 
 class CrewMember(AgentInput):
@@ -32,8 +38,9 @@ class CrewDeclaration(Strict):
         keys=[m.key for m in self.members]
         if len(keys)!=len(set(keys)):raise ValueError('团队岗位 key 不能重复')
         for member in self.members:
-            if 'text' not in member.capabilities or not set(member.capabilities)<={'text','json','search'}:
-                raise ValueError('团队岗位须声明 text，当前只支持 text/json/search')
+            tools=[capability for capability in member.capabilities if capability.startswith('tool:')]
+            if 'text' not in member.capabilities or not set(model_capabilities(member.capabilities))<={'text','json','search'} or any(not re.fullmatch(r'tool:[A-Za-z][A-Za-z0-9_-]{0,63}',capability) for capability in tools):
+                raise ValueError('团队岗位须声明 text，以及有效的模型能力或工具槽位授权')
         return self
 
 UnitInput.model_rebuild()
@@ -68,10 +75,15 @@ class Recruit(AgentInput):
 
 class PlanNode(Strict):
     key: str = Field(pattern=r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$')
+    kind: Literal['agent','tool','group'] | None = None
     parent: str | None = None
     unit_id: str | None = None
     staff: Recruit | None = None
     participants: list[str] = Field(default_factory=list,max_length=6)
+    tool_ref: str | None = Field(default=None,pattern=r'^[A-Za-z][A-Za-z0-9_-]{0,63}$')
+    arguments: dict | None = None
+    artifact_outputs: dict | None = None
+    verification: dict | None = None
     description: str = Field(min_length=1,max_length=12000)
     expected: str = Field(min_length=1,max_length=3000)
     depends_on: list[str] = Field(default_factory=list,max_length=20)
@@ -174,6 +186,11 @@ class GovernancePolicy(Strict):
     max_output_bytes: int | None = Field(default=None, ge=1, le=10 * 1024 * 1024)
     budget_points: int | None = Field(default=None, ge=0)
     independent_review: bool = False
+
+class TemplatePreviewInput(Strict):
+    parameters: dict
+    sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+
 
 class WorkflowBinding(Strict):
     name: str = Field(min_length=1,max_length=120)

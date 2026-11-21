@@ -26,13 +26,13 @@ flowchart TD
   ART --> DB
 ```
 
-图中的 CrewAI 执行路径适用于文本团队工作；图片任务通过平台图片提供者，确定性汇总节点直接复用实际产物。两者同样受平台授权、账务、文件和验收规则约束。
+图中的 CrewAI 执行路径适用于文本团队工作；图片任务通过平台图片提供者，确定性汇总节点直接复用实际产物，`kind=tool` 节点通过统一 Tool Runtime 交付 JSON。它们同样受平台授权、账务、文件和验收规则约束。
 
 | 层 | 主要实现 | 负责的事实 |
 | --- | --- | --- |
 | 领域契约 | `kernel/` | 工作流、组织、计划、命令与交付的纯结构及校验 |
 | 工作流服务 | `services/` | 定义发布与安装、唯一调度器、工作项与尝试、授权、账务、治理和验收 |
-| 团队执行 | `services/executor.py`、`services/teams.py`、`adapters/crewai.py` | 冻结团队名单，装配 CrewAI 运行对象，将模型和工具效果接回平台 |
+| 团队与确定性执行 | `services/executor.py`、`services/teams.py`、`adapters/crewai.py` | 冻结团队名单并按需装配 CrewAI；工具节点直接调用受控 Runtime，不创建团队对象 |
 | 基础设施 | `adapters/` | PostgreSQL、身份、提供者传输、文件与实例配置 |
 | 集成入口 | `interfaces/` | HTTP、管理客户端与外部调用边界 |
 
@@ -50,16 +50,16 @@ flowchart TD
 
 ## 定义、安装与执行
 
-工作流目录及其不可变修订独立于应用。应用绑定固定引用工作流 ID 与修订；同一资产可被多个独立应用消费。可复用工作流以 `orchpact-workflow` JSON 表达职责、契约、计划与能力槽位。安装时将槽位绑定到使用方模型，并为 Workspace 创建独立职责实例。执行记录保存定义指纹、登记修订与绑定，任务与调用保存既有不可变快照。定义管理、资源绑定与运行状态分别处理；管理台只是入口。格式与边界见 [工作流抽象](WORKFLOWS.md)。
+工作流目录及其不可变修订独立于应用。应用绑定固定引用工作流 ID 与修订；同一资产可被多个独立应用消费。可复用工作流以 `orchpact-workflow` JSON 表达职责、契约、计划与能力槽位。可选 JSON 组件只在作者侧由 `component-expand` 固定版本/摘要并完全展开，Runtime 不读取组件引用。安装时将槽位绑定到使用方模型或可信工具提供者，并为 Workspace 创建独立职责实例。执行记录保存定义指纹、登记修订与绑定，任务与调用保存既有不可变快照。定义管理、资源绑定与运行状态分别处理；管理台只是入口。格式与边界见 [工作流抽象](WORKFLOWS.md)。
 
 | 边界 | 保存内容 | 更新语义 |
 | --- | --- | --- |
 | 定义发布 | 工作流 ID、作者 version、目录 revision、定义 SHA-256 | 追加修订，不覆盖已发布版本 |
 | 应用引用 | 应用 ID、签名身份、明确工作流修订、应用绑定 revision | 独立于定义发布，不使用隐式 latest |
-| 空间安装 | Workspace、应用、已安装修订、模型槽位映射与组织实例 | 预览并确认两类修订，拒绝过期安装请求 |
-| 执行快照 | 来源与绑定、输入、付款人；工作项创建时的职责、岗位、能力、模型与规则 | 后续配置不回写已保存快照；明确重试沿用工作项快照 |
+| 空间安装 | Workspace、应用、已安装修订、模型/工具槽位映射与组织实例 | 预览并确认两类修订，拒绝过期安装请求 |
+| 执行快照 | 来源与绑定、输入、付款人；工作项创建时的职责、岗位、能力、模型、工具配置与规则 | 后续配置不回写已保存快照；明确重试沿用工作项快照 |
 
-导出只分享定义层；模型 ID、密钥、用户身份、安装记录和运行数据不进入可移植结构。提示词和业务 Schema 是作者内容，仍需要作者在分享前审阅。
+导出只分享定义层；模型 ID、工具 endpoint/provider 记录、密钥、用户身份、安装记录和运行数据不进入可移植结构。提示词和业务 Schema 是作者内容，仍需要作者在分享前审阅。
 
 ## 三种关系
 
@@ -69,7 +69,7 @@ flowchart TD
 
 ## 一个执行机制
 
-组织包中的原生计划和自主规划器的提案都生成同一 `tasks` / `dependencies` 图。原生阶段直接交付 JSON 对象；平台完成一次序列化。组节点按文件名汇总下级真实交付，不额外调用模型。所有计划共用同一套执行与推进机制。
+组织包中的原生计划和自主规划器的提案都生成同一 `tasks` / `dependencies` 图。原生 Agent 阶段直接交付 JSON 对象；`kind=tool` 阶段将受控工具的 `files` JSON 交给同一交付路径，平台完成一次序列化。组节点按文件名汇总下级真实交付，不额外调用模型。所有计划共用同一套执行与推进机制，纯工具计划不强制选模。
 
 工作项创建时保存职责、角色、模型、输入约定和治理快照。计划修改只允许未开始的节点，支持新增、改描述/依赖和取消；改动有理由、幂等键和 revision，并使用初始计划相同的 DAG、契约、规则及返工范围校验。已有产物不覆盖。
 
@@ -81,6 +81,8 @@ flowchart TD
 
 独立验收策略阻止系统自动接受。部分交付提供文件及明确缺口，结构化 `result` 仅在完整完成时返回。专业任务成功与最终汇总失败分别保存，汇总重试复用已有文件。
 
+原 gate 与可信 Verifier 的确定性 FAIL 共用 `Platform.repair()`：按有效上游 node_key、repair_from、当前节点选择，再调用同一 `invalidate()` 传播到下游和必要上级汇总。共享事实使全部依赖者失效，独立 sibling 不变；INCONCLUSIVE/UNKNOWN 不自动返工。`execution_plans.repairs/max_repairs`、历史 Artifact 和新 generation 继续提供有界、可审计的恢复。
+
 | 情景 | 工作流处理 | 必须保留的依据 |
 | --- | --- | --- |
 | 正常完成 | 候选输出通过契约，发布产物并完成适用验收 | 实际产物身份与验收记录 |
@@ -91,9 +93,11 @@ flowchart TD
 
 ## 执行记录与恢复
 
-`crew_runs` 记录每次实际团队启动和参与名单；`agent_steps` 关联工作项、attempt、Crew、岗位和运行 Agent。查询 run 仅提供同一权限范围内的步骤元数据，模型输出与工具参数/观察保存在私有 `var/agent-steps/`，供应商原始回执在 `var/receipts/`。
+`crew_runs` 记录每次实际团队启动和参与名单；`agent_steps` 关联工作项、attempt、Crew、岗位和运行 Agent。通用 Tool Runtime 另有 `tool_invocations` 台账，以 project + logical tool + idempotency key 防止重复副作用；首次 Agent 行动与调用共用 ID，幂等重放或 UNKNOWN 阻断的新行动在私有证据中关联原 tool_call_id。查询 run 仅提供状态、引用和摘要。模型输出与 Agent 工具参数/观察保存在私有 `var/agent-steps/`，供应商原始回执在 `var/receipts/`，通用工具参数、结果和恢复证据在 `var/tool-invocations/`。
 
-重启先恢复已有回执与结算；未完成工作转为 interrupted，不能确认结果的步骤保留 unknown。系统不恢复 CrewAI 内存循环或自动重放付费工具，明确重试创建新的 attempt 与运行对象。框架辅助目录与内存日志不承担持久化工作流、账务或恢复真相。
+重启先恢复已有工具及供应商回执与结算；无确认回执的工具意图变为 unknown。声明验证的候选工作项先由 `VerificationService` 恢复已有证据或 completed 验证回执，再把剩余未完成工作转为 interrupted；恢复不会主动发起新的验证请求。系统不恢复 CrewAI 内存循环或自动重放付费工具，明确重试沿用原工具幂等记录并创建新的 attempt 与运行对象。UNKNOWN 只能通过只读 lookup 或人工对账确认，账务核定不改变验收状态。框架辅助目录与内存日志不承担持久化工作流、账务或恢复真相。
+
+验证证据绑定候选 Artifact ID/SHA-256/generation、输出与验证契约摘要、Verifier 配置和 tool_call_id，保存在 `verification_evidence` 与配套 `var/verification-evidence/`。候选发布后仍保持 running/pending，PASS 才完成并进入现有验收，FAIL/INCONCLUSIVE 失败；`review(accept)` 再核对当前对象，waive 仍只是 partial。该路径同样适用于 Agent、确定性工具和组织/根汇总。
 
 ## 存储与账务
 

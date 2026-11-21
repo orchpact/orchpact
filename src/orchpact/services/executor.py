@@ -3,14 +3,47 @@ from datetime import datetime, timezone
 from ..adapters.database import dumps, loads
 from ..adapters.providers import Providers
 from ..kernel.models import WorkOutput, PlanningDecision, IntakeDecision
+from ..kernel.contracts import read_json_delivery
+from ..kernel.plan import resolve_tool_arguments
 from ..reference_feedback import contracts as reference_contracts, selection_outputs, authoring_node
+from .tool_artifacts import ToolArtifacts
+
+
+class ToolNodeExecutor:
+    def __init__(self,service):self.service=service;self.artifacts=ToolArtifacts()
+
+    def execute(self,ctx):
+        node=ctx['planned_node'];slot=node['tool_ref']
+        dependencies={item['node_key']:item for item in ctx['inputs']}
+        def delivery(key,path,kind):
+            item=dependencies.get(key)
+            if not item or not item.get('artifact_id'):raise ValueError('工具参数缺少当前依赖 Artifact')
+            with self.service.db.connect() as c:
+                task=self.service.row(c,'tasks',item['id'])
+                artifact=self.service.row(c,'artifacts',item['artifact_id'])
+            if task['status']!='completed' or task['review']!='accepted' or task['artifact_id']!=artifact['id'] or artifact['project_id']!=ctx['project']['id']:
+                raise ValueError('工具参数必须引用当前已验收依赖 Artifact')
+            files=[file for file in self.service.artifacts.read_files(artifact) if file['path']==path]
+            if len(files)!=1:raise ValueError('工具参数引用的 Artifact 文件不存在')
+            return artifact['id'] if kind=='artifact' else read_json_delivery(files[0]['data'])
+        input_value=ctx.get('application',{}).get('input',{})
+        arguments=resolve_tool_arguments(node['arguments'],input_value,delivery)
+        result=self.service.tools.invoke_node(ctx,slot,arguments)
+        payload=result['result']
+        files=[dict(path=path,content=dumps(value)) for path,value in payload.get('files',{}).items()]
+        files+=self.artifacts.import_result(node,ctx['snapshot']['tools'][slot]['definition'],payload)
+        self.service.complete_work(ctx['execution_context'],ctx['task']['id'],ctx['task']['attempt_id'],'工具 '+slot+' 调用完成；交付以平台契约与验收为准',files)
+        return result
+
 
 class CrewAIExecutor:
     """CrewAI drives text work; the platform validates and commits every result."""
     def __init__(self,service,providers=None):self.service=service;self.providers=providers or Providers(service)
 
     def execute(self,ctx):
-        t=ctx['task'];snapshot=ctx['snapshot'];prompt=snapshot['prompt']
+        t=ctx['task'];snapshot=ctx['snapshot']
+        if snapshot['executor'].get('kind')=='tool':return ToolNodeExecutor(self.service).execute(ctx)
+        prompt=snapshot['prompt']
         if ctx.get('input_error'):raise ValueError(ctx['input_error'])
         node=ctx.get('planned_node')
         # Inputs contain immutable snapshots; do not expose provider credentials/config.

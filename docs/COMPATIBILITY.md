@@ -4,9 +4,9 @@ Orchpact 以可自托管服务发行，Python wheel 是安装载体，集成客�
 
 ## 使用者可以依赖什么
 
-- `orchpact-workflow` JSON 定义及 `contracts/` 中的 Schema：职责、能力槽位、输入输出、计划依赖、验收与有界返工。
-- [工作流接口](WORKFLOWS.md)和[应用接入](APPLICATIONS.md)记录的 HTTP 行为；签名协议、权限、幂等键和修订冲突属于契约。完整路由以实例管理员可访问的 `/api/v1/openapi.json` 为准，管理路由不因此向产品身份开放。
-- `orchpact init/check/serve/workflow-check/backup` 命令，以及 `orchpact.interfaces.client.configure` 和应用签名客户端的已记录调用方式。
+- `orchpact-workflow` JSON 定义及 `contracts/` 中的 Schema：职责、模型/工具能力槽位、输入输出、计划依赖、验收与有界返工。支持受控 Tool Runtime、CrewAI 动态工具调用、确定性 `kind=tool` 节点、独立 `artifact_outputs`、二进制 `output_kind=artifact` 根输出，以及管理员可信 Verifier 和不可变验证证据。旧定义省略新字段时保持原 JSON 行为与摘要。
+- [工作流接口](WORKFLOWS.md)和[应用接入](APPLICATIONS.md)记录的 HTTP 行为；签名协议、权限、幂等键和修订冲突属于契约。管理员固定模板目录与只读预览使用 `GET /workflow-templates` 和 `POST /workflow-templates/{template_id}/preview`，预览不发布或安装。完整路由以实例管理员可访问的 `/api/v1/openapi.json` 为准，管理路由不因此向产品身份开放。
+- `orchpact init/check/serve/workflow-check/component-expand/backup` 命令，以及 `orchpact.interfaces.client.configure` 和应用签名客户端的已记录调用方式。`component-expand` 是离线作者工具，固定本地组件版本与摘要并输出普通工作流和独立报告，不改变发布、绑定、安装或运行时协议。
 - 独立 Docker/Compose 的实例配置方式、专用数据库与配套文件的停止备份恢复流程。
 
 CrewAI 运行对象、数据库表、内部 Python 模块、管理台 DOM、未记录的路由不承诺作为外部扩展 API。外部 Agent 适配、远程 Worker、多主调度和生成代码执行均不在首发范围。
@@ -15,7 +15,7 @@ CrewAI 运行对象、数据库表、内部 Python 模块、管理台 DOM、未�
 
 1. 1.0 前允许在次版本中调整公开接口，但必须在发行说明列出不兼容项和适配步骤；补丁版本只做兼容修复。候选验证期间如有代码变化，重新生成候选并重跑受影响检查。
 2. 定义的作者 `version`、服务的包版本、目录的单调 `revision` 是三种独立标识。更新作者版本不会自动移动应用引用或空间安装。
-3. 已发布目录修订与已受理执行的定义、模型/定价、付款人和验收快照不可原地改写。配置升级不回写历史。
+3. 已发布目录修订与已受理执行的定义、模型/定价、工具绑定、付款人和验收快照不可原地改写。配置升级不回写历史；无工具旧定义不回填 `tools:{}`，摘要保持不变。
 4. 服务升级、应用引用更新和空间安装升级分别执行。迁移前停止接单、等待任务结束并完整备份；回滚先评估新写入与 Schema，不能直接覆盖当前库。
 5. 安全修复如必须收紧原先允许的行为，会说明影响范围与替代方式。漏洞报告渠道见 [SECURITY.md](../SECURITY.md)。
 

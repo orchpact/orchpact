@@ -1,5 +1,6 @@
 """Organization command service. One graph, explicit actors, immutable deliveries."""
 from contextlib import nullcontext
+from copy import deepcopy
 from dataclasses import replace
 from hashlib import sha256
 import json
@@ -9,7 +10,7 @@ from ..adapters.identity import Principal
 from ..adapters.artifacts import encode_files
 from ..kernel.contracts import validate, check_schema, read_json_delivery
 from ..kernel.models import ExecutionContext, Decision, Command, ReviewInput, UnitInput, AgentInput
-from ..kernel.plan import validate_plan
+from ..kernel.plan import validate_plan, node_kind, is_execution, operation_requires_model, package_requires_model
 from ..kernel.errors import DomainError, Forbidden, NotFound
 from ..credits import summarize, measure
 from .governance import Governance
@@ -26,6 +27,10 @@ class Platform:
         self.workflows=WorkflowCatalog(self)
         from .validation import DeliveryContracts
         self.contracts = DeliveryContracts(self)
+        from .tools import ToolRuntime
+        self.tools = ToolRuntime(self)
+        from .verification import VerificationService
+        self.verifications = VerificationService(self)
         self.stop_event = None
 
     @staticmethod
@@ -34,7 +39,7 @@ class Platform:
 
     @staticmethod
     def row(c, table, key):
-        if table not in {'projects', 'tasks', 'artifacts', 'attempts', 'units', 'agents', 'invocations', 'requests', 'messages'}:
+        if table not in {'projects', 'tasks', 'artifacts', 'attempts', 'units', 'agents', 'invocations', 'requests', 'messages', 'tool_invocations', 'verification_evidence'}:
             raise ValueError('无效资源类型')
         row = c.execute(f'SELECT * FROM {table} WHERE id=%s', (key,)).fetchone()
         if not row:
@@ -145,7 +150,7 @@ class Platform:
             raise ValueError('组织包缺少操作')
         for operation in manifest['operations'].values():
             check_schema(operation.get('input_schema', {}))
-            check_schema(operation['output_schema'])
+            if operation.get('output_kind','json')=='json':check_schema(operation['output_schema'])
         with self.db.tx() as c:
             old = c.execute('SELECT * FROM applications WHERE id=%s', (app,)).fetchone()
             if old and c.execute('SELECT 1 FROM application_bindings WHERE application_id=%s AND revision=%s',(app,old['revision'])).fetchone():
@@ -189,18 +194,50 @@ class Platform:
             definition=export_definition(binding['manifest'])
             return dict(definition=definition,revision=binding['revision'],sha256=definition_digest(definition))
 
-    def prepare_package(self, binding, bindings, old=None):
+    def check_verification_bindings(self, manifest):
+        bindings=manifest.get('_workflow',{}).get('tool_bindings',{})
+        def check(policy,media_types):
+            binding=bindings.get(policy['tool_ref']);metadata=(binding or {}).get('verifier')
+            if not metadata or metadata['trust_level']!='trusted':raise ValueError('验收 Verifier 必须由管理员显式标记为可信')
+            if not set(policy['required_checks'])<=set(metadata['checks']):raise ValueError('Verifier 未声明全部阻断检查')
+            if not set(media_types)<=set(metadata['media_types']):raise ValueError('Verifier 不支持被验证产物的媒体类型')
+        def exported_media(node,path):
+            if path in node['outputs']:return {'application/json'}
+            if path in node.get('artifact_outputs',{}):return {node['artifact_outputs'][path]['media_type']}
+            result=set()
+            if path in node['exports']:
+                for child in nodes.values():
+                    if child['parent']==node['key']:result.update(exported_media(child,path))
+            return result
+        for operation in manifest['operations'].values():
+            if operation.get('verification'):
+                media={operation['artifact_output']['media_type']} if operation.get('output_kind')=='artifact' else {'application/json'}
+                check(operation['verification'],media)
+            nodes={node['key']:node for node in operation.get('execution_plan',{}).get('nodes',[])}
+            for node in nodes.values():
+                if not node.get('verification'):continue
+                paths=set(node['outputs'])|set(node.get('artifact_outputs',{}))|set(node.get('exports',[]))
+                media=set().union(*(exported_media(node,path) for path in paths)) if paths else set()
+                check(node['verification'],media)
+
+    def prepare_package(self, binding, bindings, old=None, ctx=None):
         from ..kernel.workflows import bind_definition, definition_digest
         manifest=binding['manifest']
         if manifest.get('format') == 'orchpact-workflow':
             bindings=bindings if bindings is not None else (loads(old['manifest']).get('_workflow',{}).get('bindings',{}) if old else {})
-            result=bind_definition(manifest,bindings,self.settings.choose)
+            def choose_tool(requirement, tool_binding):
+                if ctx is None:raise ValueError('工具绑定需要 Workspace 与应用上下文')
+                return self.configuration.resolve_tool(requirement,tool_binding,ctx.workspace_id,binding['id'])['binding']
+            result=bind_definition(manifest,bindings,self.settings.choose,choose_tool)
+            tool_bindings=result.pop('_tool_bindings',None)
             provenance=binding.get('workflow') or dict(id=manifest['id'],version=manifest['version'],revision=binding['revision'],sha256=definition_digest(manifest))
-            result['_workflow']=dict(provenance,application_binding_revision=binding['revision'],bindings=bindings)
+            workflow=dict(provenance,application_binding_revision=binding['revision'],bindings=bindings)
+            if tool_bindings is not None:workflow['tool_bindings']=tool_bindings
+            result['_workflow']=workflow
         else:
             if bindings:raise ValueError('请先将组织包导出为工作流定义，再绑定能力槽位')
             result=json.loads(dumps(manifest))
-        self.settings.choose(['text','json'])
+        if package_requires_model(result):self.settings.choose(['text','json'])
         for unit in result.get('units',[]):
             if unit.get('model_id'):self.settings.choose(['text','json'],unit['model_id'])
             for member in (unit.get('crew') or {}).get('members',[]):
@@ -210,6 +247,7 @@ class Platform:
             for node in operation.get('execution_plan',{}).get('nodes',[]):
                 if node.get('staff'):
                     staff=node['staff'];self.settings.choose(staff.get('capabilities',['text']),staff.get('model_id'))
+        self.check_verification_bindings(result)
         return result
 
     def preview_package(self, ctx, app, bindings=None):
@@ -217,14 +255,17 @@ class Platform:
             self.access.member(c,ctx.workspace_id,self.actor(ctx))
             binding=self.application(ctx,app,c)
             old=c.execute('SELECT * FROM organization_packages WHERE workspace_id=%s AND application_id=%s',(ctx.workspace_id,app)).fetchone()
-            manifest=self.prepare_package(binding,bindings,old)
+            manifest=self.prepare_package(binding,bindings,old,ctx)
             if old and old['revision']==binding['revision'] and bindings is not None and bindings!=loads(old['manifest']).get('_workflow',{}).get('bindings',{}):
                 raise DomainError('binding_conflict','当前工作流版本已绑定；变更资源须登记新修订并显式更新')
-            return dict(application_id=app,revision=binding['revision'],installed_revision=old['revision'] if old else None,
+            needs_model=package_requires_model(manifest)
+            preview=dict(application_id=app,revision=binding['revision'],installed_revision=old['revision'] if old else None,
                 action='unchanged' if old and old['revision']==binding['revision'] else 'upgrade' if old else 'install',
                 workflow=manifest.get('_workflow'),
-                units=[dict(key=u['key'],name=u['name'],model_id=u.get('model_id') or self.settings.choose(['text','json'])['id']) for u in manifest['units']],
+                units=[dict(key=u['key'],name=u['name'],model_id=u.get('model_id') or (self.settings.choose(['text','json'])['id'] if needs_model else '')) for u in manifest['units']],
                 operations={key:dict(nodes=len(op.get('execution_plan',{}).get('nodes',[])),output_file=op.get('output_file','result.json')) for key,op in manifest['operations'].items()})
+            if 'tool_bindings' in manifest.get('_workflow',{}):preview['tools']=manifest['_workflow']['tool_bindings']
+            return preview
 
     def install_package(self, ctx, app, c=None, expected_revision=None, bindings=None, binding_revision=None):
         with self.db.tx() if c is None else nullcontext(c) as c:
@@ -241,7 +282,7 @@ class Platform:
                 if bindings is not None and bindings!=loads(old['manifest']).get('_workflow',{}).get('bindings',{}):
                     raise DomainError('binding_conflict','当前工作流版本已绑定；变更资源须登记新修订并显式更新')
                 return loads(old['manifest'])
-            manifest=self.prepare_package(binding,bindings,old)
+            manifest=self.prepare_package(binding,bindings,old,ctx)
             # Install only catalog-validated data. Ordinary members may initialize it;
             # manual organization edits and explicit upgrades still require the owner.
             install_ctx=replace(ctx,subject=space['owner_id'],user_id=space['owner_id'],application_id=None,application_key_id=None)
@@ -253,13 +294,13 @@ class Platform:
             pending = list(manifest.get('units', []))
             if not pending:
                 pending = [dict(key='entry', name=manifest['name'], purpose=manifest.get('description', manifest['name']), prompt='', parent=None)]
-            profile = self.settings.choose(['text', 'json'])
+            profile = self.settings.choose(['text', 'json']) if package_requires_model(manifest) else None
             while pending:
                 progress = False
                 for item in pending[:]:
                     if item.get('parent') and item['parent'] not in units:
                         continue
-                    u = self.unit(install_ctx, dict(name=item['name'], purpose=item['purpose'], prompt=item.get('prompt', ''), parent_id=units.get(item.get('parent')), model_id=item.get('model_id') or prior.get(item['key'],{}).get('model_id') or profile['id'], crew=item.get('crew')), c=c)
+                    u = self.unit(install_ctx, dict(name=item['name'], purpose=item['purpose'], prompt=item.get('prompt', ''), parent_id=units.get(item.get('parent')), model_id=item.get('model_id') or prior.get(item['key'],{}).get('model_id') or (profile['id'] if profile else ''), crew=item.get('crew')), c=c)
                     units[item['key']] = u['id']
                     c.execute('UPDATE units SET alias=%s WHERE id=%s', (app + ':' + item['key'], u['id']))
                     pending.remove(item)
@@ -278,12 +319,28 @@ class Platform:
                 if operation.get('execution_plan'):
                     for node in operation['execution_plan']['nodes']:
                         node['unit_id'] = units[node.pop('unit')] if node.get('unit') else operation['unit_id']
-                    validate_plan(operation['execution_plan'])
+                    validate_plan(operation['execution_plan'],manifest.get('_tool_definitions'),operation.get('input_schema',{}))
                 operation.setdefault('output_file', 'result.json')
                 operation.setdefault('delivery_context_limit', 9000)
             c.execute('INSERT INTO organization_packages VALUES(%s,%s,%s,%s) ON CONFLICT(workspace_id,application_id) DO UPDATE SET revision=excluded.revision,manifest=excluded.manifest', (ctx.workspace_id, app, binding['revision'], dumps(manifest)))
             self.db.event(c, None, None, 'package.installed', workspace_id=ctx.workspace_id, application_id=app, revision=binding['revision'])
             return manifest
+
+    def freeze_tools(self, ctx, app, manifest):
+        definitions = manifest.get('_tool_definitions')
+        if not definitions:return {}
+        workflow = manifest.get('_workflow', {})
+        selected = workflow.get('bindings', {}).get('tools', {})
+        expected = workflow.get('tool_bindings', {})
+        if set(selected) != set(definitions) or set(expected) != set(definitions):
+            raise ValueError('已安装工具绑定不完整')
+        result = {}
+        for slot, definition in definitions.items():
+            resolved = self.configuration.resolve_tool(definition,selected[slot],ctx.workspace_id,app)
+            if resolved['binding'] != expected[slot]:
+                raise ValueError('工具配置已变化，请登记新应用修订并显式升级安装')
+            result[slot] = dict(definition=deepcopy(definition),binding=resolved['binding'],provider=resolved['provider'])
+        return result
 
     def invoke(self, ctx, app, data, key):
         if not isinstance(key, str) or not 1 <= len(key) <= 100:
@@ -309,6 +366,7 @@ class Platform:
             operation = manifest['operations'].get(data['operation'])
             if not operation:
                 raise NotFound('操作不存在')
+            tools = self.freeze_tools(ctx, app, manifest)
             validate(data['input'], operation.get('input_schema', {}))
             if data.get('image_request'):
                 from ..kernel.models import ImageRequest
@@ -327,23 +385,24 @@ class Platform:
             goal = operation['instruction'] + '\n任务输入：' + dumps(data['input'])
             if data.get('image_request'):
                 goal += '\nimage_request：' + dumps(data['image_request'])
-            c.execute('INSERT INTO projects(id,name,goal,root_unit_id,created,request_limit,search_limit,workspace_id,created_by,application_id,idempotency_key) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                      (project, binding['name'] + ' · ' + data['operation'], goal, operation['unit_id'], now(), operation.get('request_limit', 32), operation.get('search_limit', 0), ctx.workspace_id, ctx.user_id, app, request_key))
+            c.execute('INSERT INTO projects(id,name,goal,root_unit_id,created,request_limit,search_limit,tool_limit,workspace_id,created_by,application_id,idempotency_key) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                      (project, binding['name'] + ' · ' + data['operation'], goal, operation['unit_id'], now(), operation.get('request_limit', 32), operation.get('search_limit', 0), operation.get('tool_limit', 0), ctx.workspace_id, ctx.user_id, app, request_key))
             p = self.row(c, 'projects', project)
-            self.policies.initial(c, p, ctx.subject)
+            self.policies.initial(c, p, ctx.subject, tools)
             runctx = replace(ctx, project_id=project)
-            root = self.new_task(c, runctx, p, operation['unit_id'], goal, '按约定交付完整成果', definition={})
+            root = self.new_task(c, runctx, p, operation['unit_id'], goal, '按约定交付完整成果', definition={}, tools=tools, model_required=operation_requires_model(operation))
             frozen = dict(operation)
             if manifest.get('_workflow'):frozen['workflow']=manifest['_workflow']
+            if tools:frozen['tools']=tools
             if data.get('image_request'):
                 frozen['image_request'] = data['image_request']
             c.execute('INSERT INTO invocations VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,NULL,%s)', (project, app, data['operation'], root, dumps(data['input']), dumps(data.get('context', {})), dumps(frozen), request_key, fingerprint, now()))
             if operation.get('execution_plan'):
-                self.install_plan(c, runctx, self.row(c, 'tasks', root), operation['execution_plan'])
+                self.install_plan(c, runctx, self.row(c, 'tasks', root), operation['execution_plan'], acceptance=operation.get('verification'))
             self.reconcile(c, project)
             return self.invocation(ctx, app, project, c)
 
-    def new_task(self, c, ctx, project, unit, description, expected, parent=None, agent=None, phase='plan', definition=None):
+    def new_task(self, c, ctx, project, unit, description, expected, parent=None, agent=None, phase='plan', definition=None, tools=None, model_required=True):
         self.policies.authorize(c, ctx, 'delegate', project)
         if c.execute('SELECT COUNT(*) FROM tasks WHERE project_id=%s', (project['id'],)).fetchone()[0] >= 48:
             raise ValueError('项目工作项已达上限')
@@ -358,15 +417,29 @@ class Platform:
         if a and (a['unit_id'] != unit or a['project_id'] not in (None, project['id'])):
             raise Forbidden()
         if roster:a=dict(roster[-1]['agent'],project_id=None)
-        profile = roster[-1]['profile'] if roster else self.settings.choose(loads(a['capabilities']) if a else ['text', 'json'], a['model_id'] if a else u['model_id'])
-        from ..prompts import leader_prompt, employee_prompt, WORKER_RULES
-        prompt = (WORKER_RULES+'\n团队职责：'+u['purpose']+'\n团队提示词：'+u.get('prompt','')) if roster else employee_prompt(a) if a else leader_prompt(u)
-        policy = self.policies.snapshot(c, project, unit, dict(description=description, expected=expected, kind='work' if a else 'leader'))
+        tool_node=bool(definition) and node_kind(definition)=='tool'
+        deterministic=tool_node or not model_required or bool(definition and definition.get('kind')=='group')
+        if deterministic:
+            profile=dict(id='deterministic',kind='deterministic');prompt=''
+        else:
+            profile = roster[-1]['profile'] if roster else self.settings.choose(loads(a['capabilities']) if a else ['text', 'json'], a['model_id'] if a else u['model_id'])
+            from ..prompts import leader_prompt, employee_prompt, WORKER_RULES
+            prompt = (WORKER_RULES+'\n团队职责：'+u['purpose']+'\n团队提示词：'+u.get('prompt','')) if roster else employee_prompt(a) if a else leader_prompt(u)
+        policy = self.policies.snapshot(c, project, unit, dict(description=description, expected=expected, kind='work' if a or tool_node else 'leader'))
         snapshot = dict(unit=u, agent=a, profile=profile, prompt=prompt, prompt_sha256=sha256(prompt.encode()).hexdigest(), policies=policy)
         from .agent_steps import LIMITS
-        from importlib.metadata import version
-        snapshot['executor'] = dict(kind='crewai-crew',version=version('crewai'),limits=dict(LIMITS))
+        if deterministic:snapshot['executor'] = dict(kind='tool' if tool_node else 'deterministic',limits=dict(LIMITS))
+        else:
+            from importlib.metadata import version
+            snapshot['executor'] = dict(kind='crewai-crew',version=version('crewai'),limits=dict(LIMITS))
         snapshot['crew']=dict(process='sequential',members=roster) if roster else None
+        if tools is None:
+            binding = c.execute('SELECT binding FROM invocations WHERE id=%s', (project['id'],)).fetchone()
+            tools = loads(binding[0]).get('tools', {}) if binding else {}
+        required_slots={definition['tool_ref']} if tool_node else set()
+        if definition and definition.get('verification'):required_slots.add(definition['verification']['tool_ref'])
+        if tool_node and set(tools)!=required_slots:raise ValueError('工具工作项必须只冻结执行与验证槽位')
+        if tools:snapshot['tools'] = deepcopy(tools)
         if profile['kind'] == 'image':
             binding = c.execute('SELECT binding FROM invocations WHERE id=%s', (project['id'],)).fetchone()
             image = loads(binding[0]).get('image_request') if binding else None
@@ -374,25 +447,38 @@ class Platform:
                 snapshot['image_request'] = image
         key = ident()
         definition = definition or ({'crew_execution':True} if roster else {})
-        kind = 'work' if a else ('group' if definition else 'leader')
+        kind = 'work' if a or tool_node else ('group' if definition else 'leader')
         status = 'waiting' if kind == 'group' else 'queued'
         c.execute('INSERT INTO tasks(id,project_id,parent_id,unit_id,agent_id,kind,phase,status,description,expected,snapshot,created,definition,node_key) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                   (key, project['id'], parent, unit, agent, kind, phase, status, description, expected, dumps(snapshot), now(), dumps(definition), definition.get('key')))
         subject = 'task:' + key
-        actions = ['call', 'publish', 'ask'] if a else sorted(self.policies.ACTIONS)
-        capabilities = sorted(set(loads(a['capabilities'])) | ({'text','json'} if profile['kind']=='text' else set())) if a else sorted({cap for item in self.settings.catalog() for cap in item['capabilities']})
-        if roster:capabilities=sorted({cap for member in roster for cap in loads(member['agent']['capabilities'])})
+        actions = ['call', 'publish', 'ask'] if a or tool_node else sorted(self.policies.ACTIONS)
+        if tool_node:capabilities=sorted('tool:'+slot for slot in required_slots)
+        else:
+            capabilities = sorted(set(loads(a['capabilities'])) | ({'text','json'} if profile['kind']=='text' else set())) if a else sorted({cap for item in self.settings.catalog() for cap in item['capabilities']})
+            if roster:capabilities=sorted({cap for member in roster for cap in loads(member['agent']['capabilities'])})
+            capabilities = sorted(set(capabilities) | {'tool:' + slot for slot in tools})
+        for frozen in tools.values():
+            capabilities = sorted(set(capabilities) | set(frozen['definition']['required_permissions']))
         self.policies.grant(c, ctx, project, subject, actions, capabilities)
-        c.execute('INSERT INTO participations VALUES(%s,%s,%s,%s)', (project['id'], subject, unit, a['role'] if a else 'coordinator'))
+        c.execute('INSERT INTO participations VALUES(%s,%s,%s,%s)', (project['id'], subject, unit, a['role'] if a else 'tool' if tool_node else 'coordinator'))
         self.db.event(c, project['id'], key, 'work.created', unit_id=unit, task_kind=kind)
         return key
 
-    def install_plan(self, c, ctx, root, value, reason='initial plan'):
+    def plan_resources(self,c,project):
+        row=c.execute('SELECT binding FROM invocations WHERE id=%s',(project,)).fetchone()
+        if not row:return {},{}
+        binding=loads(row[0])
+        return binding.get('tools',{}),binding.get('input_schema',{})
+
+    def install_plan(self, c, ctx, root, value, reason='initial plan', acceptance=None):
         p = self.row(c, 'projects', root['project_id'])
         self.policies.authorize(c, ctx, 'plan', p)
         if c.execute('SELECT 1 FROM tasks WHERE parent_id=%s', (root['id'],)).fetchone():
             raise DomainError('plan_conflict', '入口已经有工作项，使用显式计划变更')
-        plan, effective = validate_plan(value)
+        tools,input_schema=self.plan_resources(c,p['id'])
+        definitions={slot:frozen['definition'] for slot,frozen in tools.items()}
+        plan, effective = validate_plan(value,definitions,input_schema)
         nodes = {n['key']: n for n in plan['nodes']}
         ids, units = {}, {}
         pending = list(nodes)
@@ -406,13 +492,20 @@ class Platform:
                 if node['staff']:
                     data = dict(node['staff']);data.pop('reason', None)
                     member = self.agent(ctx, unit, data, project=p['id'], c=c)['id']
-                ids[alias] = self.new_task(c, ctx, p, unit, node['description'], node['expected'], ids.get(node['parent'], root['id']), member, definition=node)
+                node_tools=None
+                if node_kind(node)=='tool':
+                    slots={node['tool_ref']}
+                    if node.get('verification'):slots.add(node['verification']['tool_ref'])
+                    node_tools={slot:tools[slot] for slot in slots}
+                ids[alias] = self.new_task(c, ctx, p, unit, node['description'], node['expected'], ids.get(node['parent'], root['id']), member, definition=node,tools=node_tools)
                 units[alias] = unit
                 pending.remove(alias)
         for alias, dependencies in effective.items():
             for dep in dependencies:
                 c.execute('INSERT INTO dependencies VALUES(%s,%s)', (ids[alias], ids[dep]))
-        c.execute("UPDATE tasks SET kind='group',phase='plan',status='waiting',definition=%s WHERE id=%s", (dumps(dict(result_node=plan['result_node'], root=True)), root['id']))
+        root_definition=dict(result_node=plan['result_node'],root=True)
+        if acceptance is not None:root_definition['verification']=deepcopy(acceptance)
+        c.execute("UPDATE tasks SET kind='group',phase='plan',status='waiting',definition=%s WHERE id=%s", (dumps(root_definition), root['id']))
         c.execute('INSERT INTO execution_plans VALUES(%s,%s,%s,0)', (p['id'], root['id'], dumps(plan)))
         c.execute('INSERT INTO plan_revisions VALUES(%s,%s,%s,%s,%s,%s)', (p['id'], p['revision'], dumps(plan), reason, ctx.subject, now()))
         return ids
@@ -454,7 +547,7 @@ class Platform:
     def context(self, c, task):
         p = self.row(c, 'projects', task['project_id'])
         snap = loads(task['snapshot']);node = loads(task['definition'])
-        inputs = [dict(r) for r in c.execute('SELECT t.id,t.description,t.result,t.artifact_id FROM tasks t JOIN dependencies d ON t.id=d.depends_on WHERE d.task_id=%s', (task['id'],))]
+        inputs = [dict(r) for r in c.execute('SELECT t.id,t.node_key,t.description,t.result,t.artifact_id FROM tasks t JOIN dependencies d ON t.id=d.depends_on WHERE d.task_id=%s', (task['id'],))]
         children = [dict(r) for r in c.execute('SELECT * FROM tasks WHERE parent_id=%s', (task['id'],))]
         for item in children:
             item.pop('snapshot', None)
@@ -473,27 +566,29 @@ class Platform:
         for member in context['members']:
             member['capabilities'] = loads(member['capabilities'])
         if operation:
-            context['application'] = dict(application_id=binding['application_id'], operation=binding['operation'], instruction=operation['instruction'], input=loads(binding['input']), output_file=operation['output_file'], output_schema=operation['output_schema'], delivery_context_limit=limit)
+            context['application'] = dict(application_id=binding['application_id'], operation=binding['operation'], instruction=operation['instruction'], input=loads(binding['input']), output_file=operation['output_file'], output_schema=operation.get('output_schema'), output_kind=operation.get('output_kind','json'), artifact_output=operation.get('artifact_output'), delivery_context_limit=limit)
             if operation.get('image_request'):
                 context['snapshot']['image_request'] = operation['image_request']
-        if node.get('staff') or node.get('participants'):
+        if is_execution(node):
             context['planned_node'] = node
             context['plan_nodes'] = [dict(key=r['node_key'], task_id=r['id'], outputs=list(loads(r['definition']).get('outputs', {}))) for r in c.execute('SELECT id,node_key,definition FROM tasks WHERE project_id=%s AND node_key IS NOT NULL', (p['id'],))]
-            if any(not d['complete'] for d in deliveries):
+            if node_kind(node)=='agent' and any(not d['complete'] for d in deliveries):
                 context['input_error'] = '阶段依赖包含未完整提供的文件，拒绝仅凭摘录执行'
-            if sum(len(f['content']) for d in deliveries for f in d['files']) > 240000:
+            if node_kind(node)=='agent' and sum(len(f['content']) for d in deliveries for f in d['files']) > 240000:
                 context['input_error'] = '阶段输入超过上下文额度'
         return context
 
-    def publish(self, c, ctx, task, attempt, summary, files):
+    def publish(self, c, ctx, task, attempt, summary, files, defer=False):
         p = self.row(c, 'projects', task['project_id'])
         self.policies.authorize(c, ctx, 'publish', p)
         self.contracts.check(c, task, files)
         self.policies.check_output(task, files)
         artifact = self.artifacts.publish(c, task, attempt, files)
-        c.execute("UPDATE tasks SET status='completed',result=%s,artifact_id=%s,error=NULL,review='pending' WHERE id=%s", (summary, artifact, task['id']))
-        c.execute("UPDATE attempts SET status='completed',finished=%s WHERE id=%s", (now(), attempt))
-        self.db.event(c, p['id'], task['id'], 'artifact.published', artifact_id=artifact)
+        if defer:c.execute("UPDATE tasks SET result=%s,artifact_id=%s,error=NULL,review='pending' WHERE id=%s", (summary, artifact, task['id']))
+        else:
+            c.execute("UPDATE tasks SET status='completed',result=%s,artifact_id=%s,error=NULL,review='pending' WHERE id=%s", (summary, artifact, task['id']))
+            c.execute("UPDATE attempts SET status='completed',finished=%s WHERE id=%s", (now(), attempt))
+        self.db.event(c, p['id'], task['id'], 'artifact.published', artifact_id=artifact,candidate=defer)
         return artifact
 
     def complete_work(self, ctx, task, attempt, summary, files):
@@ -501,8 +596,10 @@ class Platform:
             t = self.current(c, task, attempt)
             if not isinstance(ctx, ExecutionContext) or ctx.subject != 'task:' + task:
                 raise Forbidden('执行结果必须由领取该尝试的主体提交')
-            self.publish(c, ctx, t, attempt, summary, files)
-            self.reconcile(c, t['project_id'])
+            deferred=self.verifications.required(t)
+            artifact=self.publish(c, ctx, t, attempt, summary, files, defer=deferred)
+            if not deferred:self.reconcile(c, t['project_id'])
+            return artifact
 
     def review(self, c, ctx, task, artifact, verdict, feedback, digest=None, automatic=False):
         p = self.row(c, 'projects', task['project_id'])
@@ -513,6 +610,7 @@ class Platform:
         independent = any(x['policy']['independent_review'] for x in loads(task['snapshot']).get('policies', []))
         if independent and (ctx.subject == 'task:' + task['id'] or automatic):
             raise Forbidden('此产物需要独立评审')
+        if verdict=='accept':self.verifications.assert_accepted(c,task,actual)
         c.execute('INSERT INTO reviews VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', (ident(), p['id'], task['id'], artifact, actual['sha256'], ctx.subject, verdict, feedback, task['generation'], now()))
         if verdict == 'accept':
             c.execute("UPDATE tasks SET review='accepted' WHERE id=%s", (task['id'],))
@@ -546,6 +644,33 @@ class Platform:
         c.execute("UPDATE projects SET status='running' WHERE id=%s", (project,))
         self.db.event(c, project, None, 'plan.rework', affected=sorted(affected))
 
+    def repair(self, c, project, task, node, issues, reason):
+        planrow = c.execute('SELECT * FROM execution_plans WHERE project_id=%s', (project,)).fetchone()
+        if not planrow:return False
+        plan = loads(planrow['definition'])
+        if planrow['repairs'] >= plan.get('max_repairs', 2):
+            c.execute("UPDATE tasks SET status='failed',error=%s WHERE id=%s", (reason + '，返工额度已用尽', task['id']))
+            return True
+        rows = [dict(r) for r in c.execute('SELECT * FROM tasks WHERE project_id=%s ORDER BY created,id', (project,))]
+        upstream = set();pending = [task['id']]
+        while pending:
+            current = pending.pop()
+            deps = {r[0] for r in c.execute('SELECT depends_on FROM dependencies WHERE task_id=%s', (current,))}
+            deps |= {x['id'] for x in rows if x['parent_id'] == current}
+            for dep in deps - upstream:
+                upstream.add(dep);pending.append(dep)
+        requested = {issue.get('node_key') for issue in issues if isinstance(issue, dict)}
+        selected = {x['id'] for x in rows if x['id'] in upstream and x['node_key'] in requested}
+        if not selected:
+            selected = {x['id'] for x in rows if x['node_key'] in node.get('repair_from', [])}
+        selected = selected or {task['id']}
+        try:
+            self.invalidate(c, project, selected, dumps(issues)[:4000])
+        except DomainError:
+            return False
+        c.execute('UPDATE execution_plans SET repairs=repairs+1 WHERE project_id=%s', (project,))
+        return True
+
     def reconcile(self, c, project):
         p = self.row(c, 'projects', project)
         if p['status'] == 'cancelled':
@@ -569,30 +694,9 @@ class Platform:
                     if node.get('gate'):
                         reports = [read_json_delivery(f['data']) for f in self.artifacts.read_files(self.row(c, 'artifacts', t['artifact_id']))]
                         if not reports or reports[0].get('passed') is not True:
-                            planrow = c.execute('SELECT * FROM execution_plans WHERE project_id=%s', (project,)).fetchone()
-                            plan = loads(planrow['definition'])
-                            if planrow['repairs'] >= plan.get('max_repairs', 2):
-                                c.execute("UPDATE tasks SET status='failed',error='独立审校未通过，返工额度已用尽' WHERE id=%s", (t['id'],))
-                                changed = True
-                                continue
-                            upstream = set();pending = [t['id']]
-                            while pending:
-                                current = pending.pop()
-                                deps = {r[0] for r in c.execute('SELECT depends_on FROM dependencies WHERE task_id=%s', (current,))}
-                                deps |= {x['id'] for x in rows if x['parent_id'] == current}
-                                for dep in deps - upstream:
-                                    upstream.add(dep);pending.append(dep)
-                            requested = {issue.get('node_key') for issue in reports[0].get('issues', []) if isinstance(issue, dict)}
-                            selected = {x['id'] for x in rows if x['id'] in upstream and x['node_key'] in requested}
-                            if not selected:
-                                selected = {x['id'] for x in rows if x['node_key'] in node.get('repair_from', [])}
-                            selected = selected or {t['id']}
-                            try:
-                                self.invalidate(c, project, selected, dumps(reports[0].get('issues', []))[:4000])
-                            except DomainError:
-                                continue
-                            c.execute('UPDATE execution_plans SET repairs=repairs+1 WHERE project_id=%s', (project,))
-                            return self.reconcile(c, project)
+                            if self.repair(c, project, t, node, reports[0].get('issues', []), '独立审校未通过'):
+                                return self.reconcile(c, project)
+                            continue
                     try:
                         self.review(c, ctx, t, t['artifact_id'], 'accept', '确定性契约通过' if not node.get('gate') else '独立审校通过', automatic=not node.get('gate'))
                         changed = True
@@ -601,7 +705,7 @@ class Platform:
                 if t['kind'] == 'group' and t['status'] not in TERMINAL:
                     children = [x for x in rows if x['parent_id'] == t['id'] and loads(x['definition']).get('active',True)]
                     deps = [by_id[r[0]] for r in c.execute('SELECT depends_on FROM dependencies WHERE task_id=%s', (t['id'],))]
-                    if children and all(x['status'] == 'completed' and x['review'] == 'accepted' for x in children + deps):
+                    if children and not t['artifact_id'] and all(x['status'] == 'completed' and x['review'] == 'accepted' for x in children + deps):
                         c.execute('SAVEPOINT aggregate_delivery')
                         try:
                             files = []
@@ -616,12 +720,15 @@ class Platform:
                             files = files or [dict(path='group.json', content='{}')]
                             attempt = ident()
                             c.execute('INSERT INTO attempts(id,task_id,started,status,prompt,model_id) VALUES(%s,%s,%s,%s,%s,%s)', (attempt, t['id'], now(), 'running', '', 'deterministic'))
-                            self.publish(c, ctx, t, attempt, '约定文件原样汇总', files)
-                            updated = self.row(c, 'tasks', t['id'])
-                            try:
-                                self.review(c, ctx, updated, updated['artifact_id'], 'accept', '汇总契约通过', automatic=True)
-                            except Forbidden:
-                                pass
+                            c.execute("UPDATE tasks SET status='running',attempt_id=%s WHERE id=%s",(attempt,t['id']))
+                            deferred=self.verifications.required(t)
+                            self.publish(c, ctx, t, attempt, '约定文件原样汇总', files, defer=deferred)
+                            if not deferred:
+                                updated = self.row(c, 'tasks', t['id'])
+                                try:
+                                    self.review(c, ctx, updated, updated['artifact_id'], 'accept', '汇总契约通过', automatic=True)
+                                except Forbidden:
+                                    pass
                             changed = True
                             c.execute('RELEASE aggregate_delivery')
                         except (ValueError,OSError) as exc:
@@ -644,8 +751,9 @@ class Platform:
             status = 'completed'
             binding = c.execute('SELECT binding FROM invocations WHERE id=%s', (project,)).fetchone()
             if binding:
-                output = self.result(loads(binding[0]), self.artifacts.read_files(self.row(c, 'artifacts', root['artifact_id'])))
-                c.execute('UPDATE invocations SET result=%s WHERE id=%s', (dumps(output), project))
+                operation=loads(binding[0])
+                output = self.result(operation, self.artifacts.read_files(self.row(c, 'artifacts', root['artifact_id'])))
+                c.execute('UPDATE invocations SET result=%s WHERE id=%s', (None if operation.get('output_kind')=='artifact' else dumps(output), project))
         elif any(t['status'] == 'running' for t in rows):
             status = 'running'
         elif any(t['status'] == 'queued' for t in rows):
@@ -786,7 +894,16 @@ class Platform:
             return None
         if len(found) != 1:
             raise ValueError('交付缺少唯一的约定结果文件')
-        f = found[0];value = read_json_delivery(f.get('content', f.get('data')))
+        f = found[0]
+        if operation.get('output_kind','json')=='artifact':
+            from .tool_artifacts import inspect_media
+            data=f.get('data')
+            if data is None:data=f.get('content','').encode('utf-8')
+            contract=operation['artifact_output']
+            if len(data)>contract['max_bytes']:raise ValueError('根 Artifact 超过大小限制')
+            inspect_media(data,contract['media_type'],operation['output_file'])
+            return None
+        value = read_json_delivery(f.get('content', f.get('data')))
         validate(value, operation['output_schema'])
         return value
 
@@ -821,6 +938,8 @@ class Platform:
                         artifact_id=root['artifact_id'], tasks=tasks, questions=questions, blockers=[t['error'] for t in tasks if t['error']], error=root['error'] or next((t['error'] for t in tasks if t['error']), None),
                         crew_runs=[dict(run,roster=loads(run['roster'])) for run in c.execute('SELECT * FROM crew_runs WHERE project_id=%s ORDER BY created,id',(key,))],
                         agent_steps=[dict(step) for step in c.execute('SELECT * FROM agent_steps WHERE project_id=%s ORDER BY created,ordinal,id',(key,))],
+                        tool_invocations=[self.tools.public(dict(call)) for call in c.execute('SELECT * FROM tool_invocations WHERE project_id=%s ORDER BY created,id',(key,))],
+                        verification_evidence=[self.verifications.public(dict(evidence)) for evidence in c.execute('SELECT * FROM verification_evidence WHERE project_id=%s ORDER BY created,id',(key,))],
                         requests=requests, usage=summarize(requests), payer_user_id=p['created_by'],workflow=loads(r['binding']).get('workflow'),
                         execution_plan=dict(revision=p['revision'], repairs=plan['repairs']) if plan else None,
                         retryable_tasks=[t['id'] for t in tasks if t['status'] in ('failed', 'interrupted') and t['review'] != 'waived' and t['turns'] < 12])
@@ -951,9 +1070,13 @@ class Platform:
                         if target['project_id'] != project['id'] or dep == task['id']:
                             raise ValueError('依赖越界或自循环')
                         c.execute('INSERT INTO dependencies VALUES(%s,%s)', (task['id'], dep))
+        tools,input_schema=self.plan_resources(c,project['id'])
         if additions:
             from ..kernel.models import PlanNode
             nodes = [PlanNode.model_validate(value).model_dump() for value in additions]
+            for node in nodes:
+                for field in ('kind','tool_ref','arguments','artifact_outputs','verification'):
+                    if node[field] is None:node.pop(field)
             aliases = {r['node_key']:r['id'] for r in c.execute('SELECT id,node_key FROM tasks WHERE project_id=%s AND node_key IS NOT NULL',(project['id'],))}
             root = c.execute('SELECT id FROM tasks WHERE project_id=%s AND parent_id IS NULL',(project['id'],)).fetchone()[0]
             new_aliases = {n['key'] for n in nodes}
@@ -962,11 +1085,12 @@ class Platform:
             for node in nodes:
                 for schema in node['outputs'].values():check_schema(schema)
                 encode_files([dict(path=name,content='') for name in node['outputs']] or [dict(path='group.json',content='{}')])
-                if (node['staff'] or node['participants']) and (not node['outputs'] or (node['staff'] and 'image' in node['staff']['capabilities'])):
+                if node_kind(node)=='agent' and (not node['outputs'] or (node['staff'] and 'image' in node['staff']['capabilities'])):
                     raise ValueError('新增原生阶段须声明文本 JSON 交付')
+                if node_kind(node)=='tool' and node['tool_ref'] not in tools:raise ValueError('新增节点引用未声明的工具槽位')
                 if node['gate']:
                     schema = next(iter(node['outputs'].values()),{})
-                    if not (node['staff'] or node['participants']) or len(node['outputs']) != 1 or 'passed' not in schema.get('required',[]) or schema.get('properties',{}).get('passed',{}).get('type') != 'boolean':
+                    if node_kind(node)!='agent' or len(node['outputs']) != 1 or 'passed' not in schema.get('required',[]) or schema.get('properties',{}).get('passed',{}).get('type') != 'boolean':
                         raise ValueError('新增审校门须声明 passed 布尔字段')
             pending = list(nodes)
             while pending:
@@ -980,7 +1104,12 @@ class Platform:
                     if node['staff']:
                         data = dict(node['staff']);data.pop('reason',None)
                         member = self.agent(ctx,unit,data,project=project['id'],c=c)['id']
-                    aliases[node['key']] = self.new_task(c,ctx,project,unit,node['description'],node['expected'],parent['id'],member,definition=node)
+                    node_tools=None
+                    if node_kind(node)=='tool':
+                        slots={node['tool_ref']}
+                        if node.get('verification'):slots.add(node['verification']['tool_ref'])
+                        node_tools={slot:tools[slot] for slot in slots}
+                    aliases[node['key']] = self.new_task(c,ctx,project,unit,node['description'],node['expected'],parent['id'],member,definition=node,tools=node_tools)
                     pending.remove(node);progress = True
                 if not progress:raise ValueError('新增节点 parent 引用不存在或循环')
             for node in nodes:
@@ -998,7 +1127,8 @@ class Platform:
                 node['depends_on']=[by_id[r[0]]['node_key'] for r in c.execute('SELECT depends_on FROM dependencies WHERE task_id=%s',(task['id'],))]
                 nodes.append(node)
             plan['nodes']=nodes
-            checked,effective=validate_plan(plan)
+            definitions={slot:frozen['definition'] for slot,frozen in tools.items()}
+            checked,effective=validate_plan(plan,definitions,input_schema)
             aliases={t['node_key']:t['id'] for t in tasks if t['node_key']}
             for key,deps in effective.items():
                 for dep in deps:c.execute('INSERT INTO dependencies VALUES(%s,%s) ON CONFLICT DO NOTHING',(aliases[key],aliases[dep]))

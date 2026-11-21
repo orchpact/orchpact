@@ -51,7 +51,10 @@ class AgentSteps:
         path = self.providers.settings.data / 'agent-steps' / self.ctx['task']['attempt_id'] / (key + '.json')
         # Do not erase an actual successful response when its database update failed.
         if not path.exists():
-            self.finish(key, 'failed', dict(error_type=type(error).__name__))
+            status = getattr(error, 'status', None)
+            evidence = dict(error_type=type(error).__name__)
+            if getattr(error, 'tool_call_id', None):evidence['tool_call_id'] = error.tool_call_id
+            self.finish(key, status if status in ('failed', 'unknown') else 'failed', evidence)
 
 
 def recover_steps(service):

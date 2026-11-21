@@ -6,6 +6,7 @@ import re
 from .contracts import check_schema
 from .models import AgentInput,UnitInput
 from .plan import validate_plan
+from .verification import ArtifactOutput, verification_policy
 
 
 def validate_package(value):
@@ -59,16 +60,32 @@ def validate_package(value):
             raise ValueError('操作别名无效')
         if operation.get('unit', units[0]['key']) not in aliases:
             raise ValueError('操作引用了不存在的组织')
-        check_schema(operation.get('input_schema', {}));check_schema(operation['output_schema'])
+        check_schema(operation.get('input_schema', {}))
         if not isinstance(operation.get('instruction'), str) or not 1 <= len(operation['instruction']) <= 12000:
             raise ValueError('操作职责无效')
         filename = operation.setdefault('output_file', 'result.json')
-        if not re.fullmatch(r'[a-zA-Z0-9_-]+\.json', filename):
-            raise ValueError('操作输出必须是命名 JSON 文件')
+        output_kind=operation.get('output_kind','json')
+        if output_kind not in ('json','artifact'):raise ValueError('操作 output_kind 无效')
+        if output_kind=='artifact':
+            if 'output_schema' in operation or 'artifact_output' not in operation:raise ValueError('Artifact 根输出必须声明独立媒体契约')
+            operation['artifact_output']=ArtifactOutput.model_validate(operation['artifact_output']).model_dump()
+            from .files import encode_files
+            encode_files([dict(path=filename,data=b'x')])
+        else:
+            if 'artifact_output' in operation:raise ValueError('JSON 根输出不能声明 Artifact 媒体契约')
+            check_schema(operation['output_schema'])
+            if not re.fullmatch(r'[a-zA-Z0-9_-]+\.json', filename):raise ValueError('操作输出必须是命名 JSON 文件')
+        if 'verification' in operation:
+            if not operation.get('execution_plan'):raise ValueError('根验证策略要求固定执行计划')
+            operation['verification']=verification_policy(operation['verification'])
+            tool=value.get('_tool_definitions',{}).get(operation['verification']['tool_ref'])
+            if not tool or tool['effect']!='read':raise ValueError('根验证必须引用只读 Verifier 工具')
         for field, default, low, high in [('request_limit', 32, 1, 256), ('search_limit', 0, 0, 100), ('delivery_context_limit', 9000, 1, 120000)]:
             amount = operation.setdefault(field, default)
             if type(amount) is not int or not low <= amount <= high:
                 raise ValueError(field + ' 超出范围')
+        if 'tool_limit' in operation and (type(operation['tool_limit']) is not int or not 0 <= operation['tool_limit'] <= 64):
+            raise ValueError('tool_limit 超出范围')
         if operation.get('execution_plan'):
             plan = deepcopy(operation['execution_plan'])
             for node in plan['nodes']:
@@ -84,9 +101,11 @@ def validate_package(value):
                     team=next(u for u in units if u['key']==alias).get('crew')
                     if not team or not set(node['participants']) <= {m['key'] for m in team['members']}:
                         raise ValueError('节点参与岗位必须属于本团队声明')
-            parsed, _ = validate_plan(plan)
+            parsed, _ = validate_plan(plan,value.get('_tool_definitions'),operation.get('input_schema', {}))
             final = next(n for n in parsed['nodes'] if n['key'] == parsed['result_node'])
-            if final['outputs'].get(filename) != operation['output_schema']:
+            if output_kind=='artifact':
+                if final.get('artifact_outputs',{}).get(filename)!=operation['artifact_output']:raise ValueError('最终 Artifact 契约必须与操作输出一致')
+            elif final['outputs'].get(filename) != operation['output_schema']:
                 raise ValueError('最终工作项契约必须与操作输出一致')
     value['units'] = units
     return value

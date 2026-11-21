@@ -85,6 +85,8 @@ class CrewAIExecutionTests(KernelFixture):
         self.assertEqual([s['kind'] for s in view['agent_steps']],['model','tool','model','tool','model'])
         self.assertTrue(all(s['status']=='completed' for s in view['agent_steps']))
         self.assertEqual(view['usage']['points'],23)
+        self.assertEqual(view['usage']['tool_requests'],0)
+        self.assertEqual(view['tool_invocations'],[])
         self.assertEqual(self.calls.count('example.invalid'),3)
         self.assertEqual(self.calls.count('api.tavily.com'),2)
         receipts=list((self.settings.data/'receipts'/ctx['task']['attempt_id']).glob('*.json'))

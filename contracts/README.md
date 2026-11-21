@@ -4,17 +4,29 @@ Orchpact 的公开契约覆盖工作流声明、应用引用、空间安装与�
 
 ## 工作流、资源与版本
 
-可复用工作流使用 `format: orchpact-workflow`，声明团队与岗位、模型能力槽位、输入输出、阶段依赖、审校与有界返工。结构字段拒绝实例身份、实际模型标识和凭据；业务 Schema 与提示词按原文保存，分享前由作者审阅。
+可复用工作流使用 `format: orchpact-workflow`，声明团队与岗位、模型/工具能力槽位、输入输出、阶段依赖、审校与有界返工。结构字段拒绝实例身份、实际模型标识、endpoint 和凭据；业务 Schema 与提示词按原文保存，分享前由作者审阅。
 
 | 契约 | 校验与说明 |
 | --- | --- |
 | 可移植定义 | `orchpact workflow-check` 离线校验；完整行为见 [工作流协议](../docs/WORKFLOWS.md) |
 | 团队与岗位 | `units[].crew`、节点 `participants`；声明到运行对象的映射见 [团队设计](../docs/TEAM_EXECUTION.md) |
-| 资源安装 | `{"models":{"reasoning":"local-profile-id"}}` 为独立绑定；能力必须覆盖声明要求，不能混入定义 |
+| 资源安装 | 模型绑定选择本地 profile；工具绑定使用 `endpoint_ref + implementation_version` 选择可信 provider。槽位必须恰好覆盖，物理配置不能混入定义 |
 | 应用固定引用 | [application-binding.schema.json](application-binding.schema.json)，明确 workflow_id、workflow_revision 和 expected_revision |
 | 运行与交付 | [应用 API](../docs/APPLICATIONS.md)，包含权限、幂等、状态、文件与执行步骤元数据 |
 
 工作流作者 `version`、目录修订、应用绑定修订和 Workspace 安装修订分别管理。应用不使用隐式 latest；发布、改绑、安装和执行不自动串联。后续更新不改写已发布定义或已经保存的执行快照。
+
+作者可用 `orchpact-component-workflow` 宿主与固定版本/摘要的本地 `orchpact-component` 文件，通过 `orchpact component-expand` 在发布前展开。参数、JSON/Artifact 端口、命名空间和引用在编译期解析；最终仍是上述普通 `orchpact-workflow`，独立报告不进入定义或运行快照。该作者格式不是 Runtime 插件协议，不引入组件 Registry、远程加载或自动安装。
+
+固定工作流模板由代码内版本和 SHA-256 标识。管理员可读取表单 Schema，并以 `sha256 + parameters` 获取只读规范定义预览；默认值和显式等价参数产生相同定义摘要。预览不创建工作流、应用绑定、Workspace 安装或执行，也不接受真实模型、endpoint、凭据或私有 Artifact ID。发布与安装仍使用各自既有接口。
+
+通用工具 operation 可显式声明 `tool_limit`（0–64）；旧定义不回填该字段，缺省项目不允许通用工具调用。岗位动态调用还须显式声明 `capabilities:["tool:<槽位>"]`，该授权不参与模型能力匹配。显式 `kind=tool` 节点由自身 `tool_ref` 授权，不创建 CrewAI 对象；参数使用固定 `$ref` 输入/Artifact 映射。JSON 结果使用 `files`，二进制结果使用独立 `artifact_outputs` 和 `artifacts` 条目（`data_base64 + sha256 + media_type`）。operation 的 `output_kind=artifact` 使用独立 `artifact_output` 根媒体契约，completed 时 `result=null`，文件仍经授权下载。
+
+Runtime 使用独立 tool_call_id 和 project + logical tool + idempotency_key 幂等边界，run 的 `tool_invocations` 仅暴露状态、引用与摘要。UNKNOWN 不自动重试；显式对账只调用只读 lookup，HTTP 通用 adapter 不支持时需人工核对。只有声明 `retry_policy=safe_only` 的只读节点可在明确失败后由人工显式重试。
+
+`verification` 声明只读 Verifier 和全部阻断性 required_checks。管理员 `tool_verifier` 元数据决定可信身份、检查集合、媒体范围与环境，作者不能自证可信。候选 Artifact 的 PASS 证据绑定 ID/SHA-256/generation/contract_digest 和 Verifier 版本后才允许现有 `review()` 接受；FAIL/INCONCLUSIVE、缺失或过期证据均阻断。run 的 `verification_evidence` 与授权证据读取不包含其他 Workspace/应用数据，waive/partial 不表示完整接受。
+
+确定性 FAIL 可通过 checks 的 node_key/artifact_path/field_path/check_id/repair 进入共享有界返工，选择顺序为有效上游、repair_from、当前节点；只失效受影响分支和必要上级汇总。INCONCLUSIVE/UNKNOWN 不自动返工，execution_plan.repairs 继续受 max_repairs 限制。
 
 团队示例可直接校验，无需实例、数据库或模型：
 

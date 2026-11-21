@@ -112,9 +112,12 @@ class Database:
                 tables={row[0] for row in c.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'")}
                 if tables and ('instance_metadata' not in tables or not c.execute("SELECT 1 FROM instance_metadata WHERE key='format' AND value=%s",(FORMAT,)).fetchone()):
                     raise ValueError('目标数据库不是 Orchpact PostgreSQL 实例，请使用独立空库')
-                for statement in SCHEMA:self._install(c,statement)
-                c.execute("INSERT INTO instance_metadata VALUES('format',%s) ON CONFLICT DO NOTHING",(FORMAT,))
-                self.mark_migration(c,'0001_initial_schema')
+                if not tables:
+                    for statement in SCHEMA:self._install(c,statement)
+                    c.execute("INSERT INTO instance_metadata VALUES('format',%s)",(FORMAT,))
+                    self.mark_migration(c,'0001_initial_schema')
+                    from .schema import MIGRATIONS
+                    for name,_ in MIGRATIONS:self.mark_migration(c,name)
                 if self.backup_directory is not None:
                     marker=self.backup_directory.parent/'database-instance'
                     binding=c.execute("SELECT value FROM instance_metadata WHERE key='files_instance_id'").fetchone()

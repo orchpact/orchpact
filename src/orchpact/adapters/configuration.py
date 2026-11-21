@@ -1,6 +1,7 @@
 """Administrator-owned provider configuration. Secret values are write-only files."""
 from copy import deepcopy
 from decimal import Decimal
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,48 @@ from .database import dumps, loads, ident, now
 from ..credits import validate_policy, policy_snapshot
 from ..image_providers import image_options
 from ..search import ENDPOINTS, KEYS, profile_config
+
+TOOL_FIELDS = {'tool_interface','tool_interface_version','implementation_version','tool_policy','tool_verifier'}
+
+
+def tool_policy(value):
+    if not isinstance(value, dict) or set(value) - {'workspace_ids','application_ids','require_credential','network','max_concurrency'}:
+        raise ValueError('工具策略包含未知字段')
+    result = {}
+    for field in ('workspace_ids','application_ids'):
+        rows = value.get(field, [])
+        if not isinstance(rows, list) or len(rows) > 64 or any(not isinstance(item, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}', item) for item in rows) or len(rows) != len(set(rows)):
+            raise ValueError('工具策略范围须为不重复的有界标识列表')
+        result[field] = list(rows)
+    require_credential = value.get('require_credential', False)
+    if type(require_credential) is not bool:
+        raise ValueError('工具凭据要求须为布尔值')
+    result['require_credential'] = require_credential
+    concurrency = value.get('max_concurrency', 4)
+    if type(concurrency) is not int or not 1 <= concurrency <= 64:
+        raise ValueError('工具并发须为1到64')
+    result['max_concurrency'] = concurrency
+    network = value.get('network', {})
+    if not isinstance(network, dict) or set(network) - {'allowed_hosts','allowed_ports','allow_private'}:
+        raise ValueError('工具网络策略包含未知字段')
+    hosts = network.get('allowed_hosts', [])
+    if not isinstance(hosts, list) or len(hosts) > 16 or any(not isinstance(host, str) or not re.fullmatch(r'[A-Za-z0-9.-]{1,253}', host) or host.startswith('.') or host.endswith('.') for host in hosts) or len(hosts) != len(set(hosts)):
+        raise ValueError('工具目标主机白名单无效')
+    ports = network.get('allowed_ports', [443])
+    if not isinstance(ports, list) or not ports or len(ports) > 8 or any(type(port) is not int or not 1 <= port <= 65535 for port in ports) or len(ports) != len(set(ports)):
+        raise ValueError('工具目标端口白名单无效')
+    private = network.get('allow_private', False)
+    if type(private) is not bool:
+        raise ValueError('工具私有地址开关须为布尔值')
+    result['network'] = dict(allowed_hosts=[host.lower() for host in hosts],allowed_ports=ports,allow_private=private)
+    return result
+
+
+def tool_configuration_digest(record):
+    value = {key:record[key] for key in ('adapter','base_url','tool_interface','tool_interface_version','implementation_version','tool_policy')}
+    if record.get('tool_verifier') is not None:value['tool_verifier']=record['tool_verifier']
+    raw = json.dumps(value,sort_keys=True,ensure_ascii=False,allow_nan=False,separators=(',',':')).encode()
+    return sha256(raw).hexdigest()
 
 
 def persisted(url):
@@ -26,7 +69,7 @@ def price(value,category):
     if value is None:return None
     if not isinstance(value,dict) or set(value)-{'unit','points','unit_size'}:raise ValueError('价格仅支持unit、points、unit_size')
     unit=value.get('unit'); amount=value.get('points')
-    if unit not in ('tokens','request') or (category=='search' and unit!='request'):raise ValueError('该类型不支持此计费单位')
+    if unit not in ('tokens','request') or (category in ('search','tool') and unit!='request'):raise ValueError('该类型不支持此计费单位')
     if isinstance(amount,bool) or not isinstance(amount,(int,float)) or not Decimal(str(amount)).is_finite() or not 0<=amount<=1_000_000_000 or Decimal(str(amount)).as_tuple().exponent < -6:raise ValueError('价格须为0到10亿、最多6位小数')
     size=value.get('unit_size',1000 if unit=='tokens' else 1)
     if type(size) is not int or not 1<=size<=1_000_000_000 or (unit=='request' and size!=1):raise ValueError('计量基数无效')
@@ -81,6 +124,10 @@ class ProviderConfiguration:
         return os.environ.get(record.get('secondary_key_env' if secondary else 'key_env',''),'')
 
     def ready(self,p):
+        if p['category'] == 'tool':
+            endpoint = p['adapter'] == 'builtin' or bool(p['base_url'])
+            credential = not p['tool_policy']['require_credential'] or bool(self.secret(p))
+            return p['enabled'] and endpoint and credential
         return p['enabled'] and bool(self.secret(p)) and (p['adapter']!='volcengine' or bool(self.secret(p,True)))
 
     def public(self):
@@ -94,15 +141,43 @@ class ProviderConfiguration:
         _,value=self.read(c)
         return next((deepcopy(p) for p in value['providers'] if p['id']==key),None)
 
+    def resolve_tool(self, requirement, binding, workspace_id, application_id):
+        provider = self.record(binding['endpoint_ref'])
+        if not provider or provider['category'] != 'tool' or not provider['enabled']:
+            raise ValueError('工具提供者不存在或已停用')
+        if provider['adapter'] == 'mcp':
+            raise ValueError('MCP transport 尚未评审并锁定依赖，当前不可绑定')
+        if provider['tool_interface'] != requirement['interface'] or provider['tool_interface_version'] != requirement['version']:
+            raise ValueError('工具接口或接口版本不兼容')
+        if provider['implementation_version'] != binding['implementation_version']:
+            raise ValueError('工具实现版本不兼容')
+        policy = tool_policy(provider['tool_policy'])
+        provider['tool_policy'] = policy
+        from ..kernel.verification import verifier_metadata
+        provider['tool_verifier']=verifier_metadata(provider.get('tool_verifier'))
+        if policy['workspace_ids'] and workspace_id not in policy['workspace_ids']:
+            raise ValueError('工具提供者未授权此 Workspace')
+        if policy['application_ids'] and application_id not in policy['application_ids']:
+            raise ValueError('工具提供者未授权此应用')
+        if policy['require_credential'] and not self.secret(provider):
+            raise ValueError('工具提供者尚未配置凭据')
+        safe = dict(interface=provider['tool_interface'],interface_version=provider['tool_interface_version'],
+            type=provider['adapter'],endpoint_ref=provider['id'],implementation_version=provider['implementation_version'],
+            configuration_digest=tool_configuration_digest(provider))
+        if provider['tool_verifier'] is not None:safe['verifier']=deepcopy(provider['tool_verifier'])
+        return dict(binding=safe,provider=provider)
+
     def defaults(self,c=None):return self.read(c)[1]['credits']
 
-    def charge_policy(self,kind,model,c=None,defaults=None):
+    def charge_policy(self,kind,model,c=None,defaults=None,provider=None):
         category='search' if kind=='search' else 'text'
         key=model
         if model.startswith('search:') and model.endswith(':search'):key=model[:-7]
-        p=self.record(key,c)
+        p=deepcopy(provider) if provider is not None else self.record(key,c)
         if self.read(c)[0] and p and not p['enabled']:raise ValueError('提供者已停用，未发出新调用：'+p['id'])
         policy=policy_snapshot(defaults if defaults is not None and self.read(c)[0]==0 else self.defaults(c))
+        if kind == 'tool' and (not p or p.get('category') != 'tool' or p.get('pricing') is None):
+            raise ValueError('工具按次积分价格未知，拒绝发起调用')
         if p:
             category=p['category'];rate=p.get('pricing')
             if rate is not None:policy.update(version=2,provider_id=p['id'],category=category,pricing=deepcopy(rate))
@@ -144,11 +219,14 @@ class ProviderConfiguration:
         if not isinstance(rows,list) or not 1<=len(rows)<=100:raise ValueError('提供者须为1到100项')
         old_by_id={p['id']:p for p in old['providers']};ids=set();secrets=[]
         fields={'id','category','label','enabled','adapter','base_url','model','key_env','secondary_key_env','priority','search','thinking_disabled','image_options','pricing'}
-        allowed={'text':{'openai_compatible'},'image':{'openai_compatible','openai','seedream','gemini'},'search':set(ENDPOINTS)|{'deepseek_fetch'}}
+        allowed={'text':{'openai_compatible'},'image':{'openai_compatible','openai','seedream','gemini'},'search':set(ENDPOINTS)|{'deepseek_fetch'},'tool':{'http','mcp','builtin'}}
         for index,p in enumerate(rows):
-            if not isinstance(p,dict) or set(p)-fields-{'secret','secondary_secret','secret_configured','secondary_configured','available'}:raise ValueError('提供者包含未知字段')
+            if not isinstance(p,dict) or set(p)-fields-TOOL_FIELDS-{'secret','secondary_secret','secret_configured','secondary_configured','available'}:raise ValueError('提供者包含未知字段')
             for field in ('secret_configured','secondary_configured','available'):p.pop(field,None)
-            if set(p)-{'secret','secondary_secret'}!=fields:raise ValueError('提供者字段不完整')
+            category=p.get('category')
+            if category=='tool':p.setdefault('tool_verifier',None)
+            required=fields|TOOL_FIELDS if category=='tool' else fields
+            if set(p)-{'secret','secondary_secret'}!=required:raise ValueError('提供者字段不完整')
             key=p['id'];category=p['category']
             if not isinstance(key,str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_:-]{0,79}',key) or key in ids:raise ValueError('提供者ID无效或重复')
             ids.add(key)
@@ -161,10 +239,21 @@ class ProviderConfiguration:
             if not isinstance(p['model'],str) or len(p['model'])>200 or (category in ('text','image') and not p['model'].strip()):raise ValueError('需要有效模型名称')
             for f in ('key_env','secondary_key_env'):
                 if not isinstance(p[f],str) or (p[f] and not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',p[f])):raise ValueError('凭据环境变量名无效')
-            try:
-                u=urlsplit(p['base_url']);u.port
-                if u.scheme!='https' or not u.hostname or u.username or u.password or u.query or u.fragment:raise ValueError()
-            except (ValueError,TypeError,AttributeError):raise ValueError('提供者地址须为无凭据、无查询参数的HTTPS URL') from None
+            if category=='tool':
+                from ..kernel.tools import validate_version
+                from ..kernel.verification import verifier_metadata
+                if not isinstance(p['tool_interface'],str) or not re.fullmatch(r'[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+',p['tool_interface']) or len(p['tool_interface'])>120:raise ValueError('工具提供者接口无效')
+                validate_version(p['tool_interface_version']);validate_version(p['implementation_version'])
+                p['tool_policy']=tool_policy(p['tool_policy'])
+                p['tool_verifier']=verifier_metadata(p['tool_verifier'])
+                if p['model'] or p['search'] or p['thinking_disabled'] or p['key_env'] or p['secondary_key_env'] or 'secondary_secret' in p:raise ValueError('工具提供者不支持模型字段或环境凭据')
+            if category=='tool' and p['adapter']=='builtin':
+                if p['base_url']!='':raise ValueError('builtin 工具地址须为空')
+            else:
+                try:
+                    u=urlsplit(p['base_url']);u.port
+                    if u.scheme!='https' or not u.hostname or u.username or u.password or u.query or u.fragment:raise ValueError()
+                except (ValueError,TypeError,AttributeError):raise ValueError('提供者地址须为无凭据、无查询参数的HTTPS URL') from None
             if category=='image':image_options(dict(provider=p['adapter'],image_options=p['image_options']))
             elif p['image_options']!={}:raise ValueError('只有图片类可配置图片选项')
             p['pricing']=price(p['pricing'],category)

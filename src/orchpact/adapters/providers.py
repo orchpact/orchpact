@@ -1,4 +1,5 @@
 """Local executor and provider adapters. There is deliberately no remote worker API."""
+from contextlib import nullcontext
 import base64
 import hashlib
 import json
@@ -21,17 +22,18 @@ from ..provider_http import bounded_json, write_receipt
 class Providers:
     def __init__(self,service):self.service=service;self.db=service.db;self.settings=service.settings
 
-    def reserve(self,ctx,kind,model,token_bound=None):
+    def reserve(self,ctx,kind,model,token_bound=None,provider=None,c=None):
+        capability = 'tool:' + model.split(':', 1)[1] if kind == 'tool' else 'search' if kind == 'search' else 'text'
         if ctx.get('_crew_member_key'):
-            capability='search' if kind=='search' else 'text'
             if capability not in loads(ctx['snapshot']['agent']['capabilities']):
                 from ..kernel.errors import Forbidden
                 raise Forbidden('本岗位未声明调用所需能力')
-        with self.db.tx() as c:
+        with self.db.tx() if c is None else nullcontext(c) as c:
             task=self.service.current(c,ctx['task']['id'],ctx['task']['attempt_id'])
             p=self.service.row(c,'projects',task['project_id'])
-            grant=self.service.policies.authorize(c,ctx['execution_context'],'call',p, 'search' if kind=='search' else ('image' if ctx['snapshot']['profile']['kind']=='image' else 'text'))
-            limit=p['search_limit'] if kind=='search' else p['request_limit']
+            authorized = capability if kind in ('search','tool') else ('image' if ctx['snapshot']['profile']['kind']=='image' else 'text')
+            grant=self.service.policies.authorize(c,ctx['execution_context'],'call',p,authorized)
+            limit=p['search_limit'] if kind=='search' else p['tool_limit'] if kind=='tool' else p['request_limit']
             if kind=='search':
                 source=quota_source(model)
                 if source_usage(c,p['id'])[source]>=limit:
@@ -40,7 +42,7 @@ class Providers:
                 count=c.execute('SELECT count(*) FROM requests WHERE project_id=%s AND kind=%s',(p['id'],kind)).fetchone()[0]
                 if count>=limit:raise ValueError(f'项目{kind}调用已达硬上限{limit}')
             config=getattr(self.service,'configuration',None)
-            policy=config.charge_policy(kind,model,c,defaults=self.settings.credits) if config else policy_snapshot(self.settings.credits)
+            policy=config.charge_policy(kind,model,c,defaults=self.settings.credits,provider=provider) if config else policy_snapshot(self.settings.credits)
             reserved=reservation_amount(kind,policy,token_bound)
             blocked=self.service.policies.budget_block(c,task,reserved,grant)
             if not blocked:
@@ -57,8 +59,8 @@ class Providers:
         config=getattr(self.service,'configuration',None)
         return config.secret(profile['credential']) if config and profile.get('credential') else os.environ[profile['key_env']]
 
-    def record(self,key,status,usage=None,response_id=None,error=None):
-        with self.db.tx() as c:
+    def record(self,key,status,usage=None,response_id=None,error=None,c=None):
+        with self.db.tx() if c is None else nullcontext(c) as c:
             # Receipts may be replayed after recovery; a settled debit is immutable.
             if getattr(self.service,'access',None):
                 charge=c.execute('SELECT state FROM credit_charges WHERE request_id=%s',(key,)).fetchone()

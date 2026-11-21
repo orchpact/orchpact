@@ -142,6 +142,7 @@ SCHEMA = [
         layout TEXT NOT NULL DEFAULT '{}',
         request_limit BIGINT NOT NULL DEFAULT 64,
         search_limit BIGINT NOT NULL DEFAULT 32,
+        tool_limit BIGINT NOT NULL DEFAULT 0,
         idempotency_key TEXT,
         workspace_id TEXT REFERENCES workspaces(id),
         created_by TEXT REFERENCES users(id),
@@ -287,6 +288,30 @@ SCHEMA = [
         credit_policy TEXT,
         reserved_points_micros TEXT,
         mandate_id TEXT REFERENCES mandates(id))""",
+    """CREATE TABLE tool_invocations(
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        task_id TEXT NOT NULL REFERENCES tasks(id),
+        attempt_id TEXT NOT NULL REFERENCES attempts(id),
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+        application_id TEXT NOT NULL REFERENCES applications(id),
+        logical_tool TEXT NOT NULL,
+        interface_version TEXT NOT NULL,
+        implementation_version TEXT NOT NULL,
+        binding_digest TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        adapter TEXT NOT NULL,
+        effect TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('started','completed','failed','unknown')),
+        idempotency_key TEXT NOT NULL,
+        args_digest TEXT NOT NULL,
+        result_digest TEXT,
+        request_id TEXT UNIQUE REFERENCES requests(id),
+        error_code TEXT,
+        recovery TEXT NOT NULL DEFAULT 'none',
+        created DOUBLE PRECISION NOT NULL,
+        finished DOUBLE PRECISION,
+        UNIQUE(project_id,logical_tool,idempotency_key))""",
     """CREATE TABLE credit_charges(request_id TEXT PRIMARY KEY REFERENCES requests(id),
         user_id TEXT NOT NULL REFERENCES users(id),
         reserved BIGINT NOT NULL,
@@ -332,6 +357,10 @@ SCHEMA = [
         node_key) WHERE node_key IS NOT NULL""",
     """CREATE INDEX task_project ON tasks(project_id,
         status)""",
+    """CREATE INDEX tool_invocation_attempt ON tool_invocations(attempt_id,
+        created)""",
+    """CREATE INDEX tool_invocation_recovery ON tool_invocations(status,
+        provider_id)""",
 ]
 
 WORKFLOW_SCHEMA = [
@@ -352,6 +381,31 @@ WORKFLOW_SCHEMA = [
 
 SCHEMA += WORKFLOW_SCHEMA
 
+VERIFICATION_SCHEMA = [
+    """CREATE TABLE verification_evidence(
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        task_id TEXT NOT NULL REFERENCES tasks(id),
+        attempt_id TEXT NOT NULL REFERENCES attempts(id),
+        artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+        artifact_sha256 TEXT NOT NULL,
+        generation BIGINT NOT NULL,
+        contract_digest TEXT NOT NULL,
+        logical_tool TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        interface_version TEXT NOT NULL,
+        implementation_version TEXT NOT NULL,
+        binding_digest TEXT NOT NULL,
+        tool_call_id TEXT UNIQUE NOT NULL REFERENCES tool_invocations(id),
+        status TEXT NOT NULL CHECK(status IN ('PASS','FAIL','INCONCLUSIVE')),
+        checks TEXT NOT NULL,
+        bundle_digest TEXT NOT NULL,
+        created DOUBLE PRECISION NOT NULL)""",
+    'CREATE INDEX verification_evidence_current ON verification_evidence(task_id,artifact_id,generation,contract_digest,status)',
+]
+
+SCHEMA += VERIFICATION_SCHEMA
+
 SCHEMA += [
     """CREATE TABLE crew_runs(
         id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),
@@ -366,4 +420,37 @@ SCHEMA += [
         name TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('started','completed','failed','unknown')),
         created DOUBLE PRECISION NOT NULL,finished DOUBLE PRECISION,
         UNIQUE(attempt_id,ordinal))""",
+]
+
+MIGRATIONS = [
+    ('0002_tool_runtime', [
+        'ALTER TABLE projects ADD COLUMN tool_limit BIGINT NOT NULL DEFAULT 0',
+        """CREATE TABLE tool_invocations(
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            task_id TEXT NOT NULL REFERENCES tasks(id),
+            attempt_id TEXT NOT NULL REFERENCES attempts(id),
+            workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+            application_id TEXT NOT NULL REFERENCES applications(id),
+            logical_tool TEXT NOT NULL,
+            interface_version TEXT NOT NULL,
+            implementation_version TEXT NOT NULL,
+            binding_digest TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            adapter TEXT NOT NULL,
+            effect TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('started','completed','failed','unknown')),
+            idempotency_key TEXT NOT NULL,
+            args_digest TEXT NOT NULL,
+            result_digest TEXT,
+            request_id TEXT UNIQUE REFERENCES requests(id),
+            error_code TEXT,
+            recovery TEXT NOT NULL DEFAULT 'none',
+            created DOUBLE PRECISION NOT NULL,
+            finished DOUBLE PRECISION,
+            UNIQUE(project_id,logical_tool,idempotency_key))""",
+        'CREATE INDEX tool_invocation_attempt ON tool_invocations(attempt_id,created)',
+        'CREATE INDEX tool_invocation_recovery ON tool_invocations(status,provider_id)',
+    ]),
+    ('0003_verification_evidence', VERIFICATION_SCHEMA),
 ]

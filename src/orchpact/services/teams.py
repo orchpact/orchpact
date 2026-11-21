@@ -1,6 +1,6 @@
 """Compile reusable team declarations into immutable execution rosters."""
 from ..adapters.database import dumps
-from ..kernel.models import CrewDeclaration
+from ..kernel.models import CrewDeclaration, model_capabilities
 
 
 def freeze_team(settings, unit, participants=None):
@@ -14,7 +14,7 @@ def freeze_team(settings, unit, participants=None):
     roster=[]
     for key in wanted:
         member=dict(by_key[key])
-        profile=settings.choose(member['capabilities'],member.get('model_id') or unit['model_id'])
+        profile=settings.choose(model_capabilities(member['capabilities']),member.get('model_id') or unit['model_id'])
         member['capabilities']=dumps(member['capabilities'])
         roster.append(dict(key=key,agent=member,profile=profile,instruction=member['instruction']))
     return roster

@@ -1,7 +1,7 @@
 """CrewAI owns the single-agent loop; Orchpact owns effects and durable facts."""
 import json
 import os
-from typing import Literal
+from typing import Any, ClassVar, Literal
 
 # Embedded execution never opts users into AMP telemetry or ambient .env loading.
 os.environ['CREWAI_DISABLE_TELEMETRY'] = 'true'
@@ -11,12 +11,14 @@ os.environ['PYTHON_DOTENV_DISABLED'] = 'true'
 from crewai import Agent, BaseLLM, Crew, Process, Task
 from crewai.tools import BaseTool
 from crewai_core.printer import set_suppress_console_output, should_suppress_console_output
-from pydantic import Field, PrivateAttr, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, create_model, model_validator
 
 from ..kernel.models import Strict
+from ..kernel.contracts import validate
 from ..kernel.errors import Forbidden
 from ..adapters.database import dumps, loads, now
 from ..services.agent_steps import AgentSteps
+from ..services.tools import digest
 from ..provider_http import write_receipt
 from copy import deepcopy
 
@@ -35,6 +37,34 @@ class SearchArguments(Strict):
 class ArtifactArguments(Strict):
     artifact_id: str = Field(min_length=1, max_length=100)
     limit: int = Field(default=9000, ge=1, le=16000)
+
+
+class ToolArgumentsBase(BaseModel):
+    model_config = ConfigDict(extra='allow', strict=True)
+    _contract: ClassVar[dict] = {}
+
+    @model_validator(mode='before')
+    @classmethod
+    def check_contract(cls, value):
+        validate(value, cls._contract)
+        return value
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):
+        return deepcopy(cls._contract)
+
+    def model_dump(self, *args, **kwargs):
+        kwargs.setdefault('exclude_unset', True)
+        return super().model_dump(*args, **kwargs)
+
+
+def tool_arguments(slot, schema):
+    properties = schema.get('properties', {})
+    required = set(schema.get('required', []))
+    fields = {name:(Any, ... if name in required else None) for name in properties}
+    model = create_model('ToolArguments_' + slot, __base__=ToolArgumentsBase, **fields)
+    model._contract = deepcopy(schema)
+    return model
 
 
 def never_cache(*_):
@@ -71,23 +101,31 @@ class ScopedTool(BaseTool):
     _session: object = PrivateAttr()
     _handler: object = PrivateAttr()
     _capability: str = PrivateAttr()
+    _runtime: bool = PrivateAttr()
 
-    def __init__(self, session, name, description, schema, capability, handler):
+    def __init__(self, session, name, description, schema, capability, handler, runtime=False):
         super().__init__(name=name, description=description, args_schema=schema,
                          cache_function=never_cache)
         self._session, self._handler, self._capability = session, handler, capability
+        self._runtime = runtime
 
     def _run(self, **kwargs):
         key = None
         try:
             key = self._session.begin('tool', self.name, self._capability)
-            value = self._handler(**kwargs)
-            self._session.finish(key, 'completed', dict(arguments=kwargs, result=value))
+            value = self._handler(key, **kwargs) if self._runtime else self._handler(**kwargs)
+            call_id = value['tool_call_id'] if self._runtime else None
+            evidence = dict(arguments=kwargs, result=value)
+            if self._runtime:evidence['tool_call_id'] = call_id
+            self._session.finish(key, 'completed', evidence)
             # Tool content is data. Keep the next model context bounded and explicit.
             if self.name == 'search_evidence':
                 return dumps(search_observation(value))
+            if self._runtime:value = value['result']
             raw = dumps(value)
-            return dumps(dict(content=raw[:24000], truncated=len(raw) > 24000))
+            observation = dict(content=raw[:24000], truncated=len(raw) > 24000)
+            if self._runtime:observation['tool_call_id'] = call_id
+            return dumps(observation)
         except Exception as error:
             try:
                 if key:self._session.fail(key, error)
@@ -179,6 +217,15 @@ def prepare_role(providers,ctx,prompt,inputs,schema,allow_tools):
         capabilities = loads(ctx['snapshot']['agent']['capabilities']) if ctx['snapshot']['agent'] else []
         if 'search' in capabilities and providers.search_remaining(ctx):
             tools.append(ScopedTool(session, 'search_evidence', 'Search for evidence with a focused query. Each actual provider request consumes the platform search quota and budget.', SearchArguments, 'search', lambda query: providers.search(ctx, query)))
+        for slot, frozen in ctx['snapshot'].get('tools', {}).items():
+            if 'tool:' + slot not in capabilities:
+                continue
+            definition = frozen['definition']
+            def invoke(step_id, _slot=slot, **arguments):
+                key = 'agent-' + digest(dict(task_id=ctx['task']['id'],slot=_slot,arguments=arguments))
+                return providers.service.tools.invoke(ctx,_slot,arguments,key,tool_call_id=step_id)
+            tools.append(ScopedTool(session,slot,definition['description'] or definition['interface'],
+                tool_arguments(slot,definition['input_schema']),'tool:'+slot,invoke,runtime=True))
     inputs = dict(inputs, agent_tools=[dict(name=t.name,parameters=t.args_schema.model_json_schema()) for t in tools])
     if ctx['snapshot']['agent'] and 'search' in loads(ctx['snapshot']['agent']['capabilities']):
         inputs['search_budget'] = providers.search_budget(ctx)

@@ -46,6 +46,8 @@ uv run python examples/register-workflow.py examples/workflows/department-review
 | 回答问题 | `POST /questions/{id}/answers`，`{content}` |
 | 账务与事件 | `GET /runs/{id}/usage`、`/requests`、`/events` |
 | 回执 | `GET /requests/{id}`，返回 `{request,receipt}` |
+| 工具对账 | `POST /tool-invocations/{id}/reconcile`，只执行 adapter 支持的只读 lookup，不重放原调用 |
+| 验证证据 | `GET /verification-evidence/{id}`，返回证据元数据与 bundle，权限与 run 相同 |
 | 文件 | `GET /artifacts/{id}`、`/download`、`/preview` |
 | 尝试 | `GET /work-items/{id}/attempts` |
 | 授权 | `GET/POST /runs/{id}/mandates`，`DELETE …/mandates/{id}` |
@@ -73,18 +75,32 @@ Orchpact 使用 PostgreSQL，产品通过网关签名和 Workspace scope 调用�
 
 run 的每个 request 增加 `accounting`：`state` 为 `held`、`settled` 或 `untracked`，`reserved_points` 与 `settled_points` 为内部积分，可为 null。无记录或金额未知不能按 0 处理；这不是供应商币种金额。`credits.status=missing_usage` 说明用量缺失，即使人工核定费用后也可能保留；扣账是否完成以 accounting 为准。`status=unknown` 描述调用结果，不会因账务核定自动变为完成。
 
+run 的 `tool_invocations` 返回通用工具调用元数据：tool_call_id、工作项/attempt、逻辑槽位、接口/实现版本、binding/参数/结果摘要、request_id、started/completed/failed/unknown 状态和 recovery。权限与 run 相同，不包含参数、结果正文、URL 或凭据。`tool_requests` 与 `tool_points` 汇总内部工具请求和积分；UNKNOWN 请求保持 held，人工核定账务不等于工具结果变为完成。
+
+`POST /tool-invocations/{id}/reconcile` 仅用于 UNKNOWN 的显式只读对账。支持 lookup 的静态 builtin 可返回原调用结果；通用 HTTP adapter 没有标准 lookup，会明确拒绝。该接口不会创建新 tool_call_id 或 request，也不会自动验收或重试工作项。
+
+确定性 `kind=tool` 工作项和组织汇总的 attempt 使用 `model_id=deterministic`，不产生 CrewAI 运行记录、Agent 行动或模型账务；工具费用仍在 `tool_invocations/requests/usage` 查询。工具节点的 completed 结果可在明确重试时回读而不重复收费；UNKNOWN 始终阻断自动重放。JSON 根操作在 completed 时返回结构化 `result`；`output_kind=artifact` 的二进制 run 返回当前已验收根 `artifact_id` 并保持 `result=null`，使用既有授权下载。
+
+### 验证证据与候选交付
+
+声明 `verification` 的工作项先发布候选 Artifact，再执行管理员可信 Verifier。候选可被有权限的使用方查看或下载，但 task 仍为 running、review 为 pending，不能驱动下游或被人工 accept。PASS 证据落库后才进入现有验收；FAIL/INCONCLUSIVE 保留候选与证据并失败。waive 仍只产生 partial/waived。
+
+run 的 `verification_evidence` 返回 Artifact ID/SHA-256/generation、contract_digest、Verifier 接口与实现、binding_digest、tool_call_id、状态和 checks。`GET /api/v1/verification-evidence/{id}` 另返回证据元数据与 bundle，权限与 run 相同。更换 Artifact、契约或 generation 后旧证据不能用于接受；独立人审继续在其后适用。
+
+确定性 FAIL 的 checks 可带 node_key、artifact_path、field_path、check_id 和 repair，驱动现有有界定向返工；execution_plan.repairs 记录已用次数。INCONCLUSIVE 和 UNKNOWN 不自动返工，waive 仍只产生 partial/waived。
+
 每个 task 的 `requires_independent_review` 来自创建时冻结的策略，用于解释该任务的验收要求。客户端展示这些字段不会赋予新的权限，服务端继续执行现有授权和验收检查。
 
 
 ## 工作流来源与定义导出
 
-run 的 workflow 元数据保存定义 ID、作者版本、目录修订、SHA-256、应用绑定修订与本次模型 bindings。查询可解释一次执行使用了什么，不从当前目录头推测历史配置。
+run 的 workflow 元数据保存定义 ID、作者版本、目录修订、SHA-256、应用绑定修订与本次模型/工具 bindings。声明工具时，`tool_bindings` 另含 adapter 类型、接口/实现版本、endpoint_ref 和配置摘要；真实 URL、provider 记录与 `_secret_ref` 只在服务端内部快照，不出现在 run 响应。查询可解释一次执行使用了什么，不从当前目录头推测历史配置。
 
 `GET /apps/{app}/definition` 导出应用固定引用的作者定义，不包含本地绑定、运行记录或凭据。工作流目录管理、全局应用改绑和安装预览保持管理域名范围，不扩展产品网关白名单。消费应用继续使用自己的签名、公钥和运行路径，不能访问其他应用。
 
 ## Agent 执行步骤
 
-run 查询结果的 `agent_steps` 列出当前项目的步骤元数据：工作项、attempt、序号、model/tool 类型、名称、started/completed/failed/unknown 状态及时间。权限与 run 相同；工具参数和观察正文不包含在该列表中。供应商费用仍从 requests.accounting 读取。设计见 [执行边界](EXECUTION_BOUNDARY.md)。
+run 查询结果的 `agent_steps` 列出当前项目的步骤元数据：工作项、attempt、序号、model/tool 类型、名称、started/completed/failed/unknown 状态及时间。权限与 run 相同；工具参数和观察正文不包含在该列表中。通用工具的新行动步骤以相同 ID 关联 `tool_invocations`；幂等重放或 UNKNOWN 阻断产生的新步骤在私有行动回执中记录原 tool_call_id。供应商费用仍从 requests.accounting 读取。设计见 [执行边界](EXECUTION_BOUNDARY.md)。
 
 ## 团队执行元数据
 

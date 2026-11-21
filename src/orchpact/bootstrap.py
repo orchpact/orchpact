@@ -31,6 +31,9 @@ class Instance:
             db = Database(self.settings.database_url,self.settings.data/'backups')
             self.database=db
             db.initialize(self.lock)
+            from .adapters.schema import MIGRATIONS
+            for name, statements in MIGRATIONS:
+                db.migrate(name, statements)
             # Upstream import initializes an app-data directory even with memory
             # disabled. Own that directory explicitly; never require a user home.
             storage = (self.settings.data / 'crewai-runtime').resolve()

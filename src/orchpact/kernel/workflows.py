@@ -4,13 +4,15 @@ from hashlib import sha256
 import json
 import re
 
+from .models import model_capabilities
+
 FORMAT = 'orchpact-workflow'
 TOP = {'format','id','name','version','description','resources','units','agents','operations'}
 UNIT = {'key','parent','name','purpose','prompt','model','crew'}
 AGENT = {'unit','name','role','prompt','capabilities','model'}
 STAFF = (AGENT - {'unit'}) | {'reason'}
 CREW_MEMBER = (AGENT - {'unit'}) | {'key','instruction'}
-OPERATION = {'unit','instruction','input_schema','output_schema','output_file','request_limit','search_limit','delivery_context_limit','execution_plan'}
+OPERATION = {'unit','instruction','input_schema','output_schema','output_kind','artifact_output','verification','output_file','request_limit','search_limit','tool_limit','delivery_context_limit','execution_plan'}
 CAPABILITIES = {'text','json','search','image','image_reference'}
 
 
@@ -35,6 +37,9 @@ def model_sites(value):
 def materialize(value, models):
     """Translate one definition to the existing package/graph implementation."""
     package = deepcopy(value)
+    tools = package.get('resources', {}).get('tools')
+    if tools is not None:
+        package['_tool_definitions'] = deepcopy(tools)
     package.pop('format', None);package.pop('resources', None)
     for site, _ in model_sites(package):
         if 'model' in site:
@@ -58,7 +63,7 @@ def validate_definition(value):
     if 'description' in value and (not isinstance(value['description'], str) or len(value['description']) > 12000):
         raise ValueError('工作流描述无效')
     resources = value.setdefault('resources', {'models': {}})
-    fields(resources, {'models'}, '资源需求')
+    fields(resources, {'models','tools'}, '资源需求')
     models = resources.setdefault('models', {})
     if not isinstance(models, dict) or len(models) > 64:
         raise ValueError('模型能力槽位数量无效')
@@ -69,6 +74,9 @@ def validate_definition(value):
         caps = requirement.get('capabilities')
         if not isinstance(caps, list) or not caps or any(not isinstance(cap,str) for cap in caps) or not set(caps) <= CAPABILITIES or len(caps) != len(set(caps)):
             raise ValueError('模型能力槽位须声明有效能力')
+    if 'tools' in resources:
+        from .tools import validate_tool_definitions
+        resources['tools'] = validate_tool_definitions(resources['tools'])
     for unit in value.get('units', []):
         fields(unit, UNIT, '职责定义')
         if unit.get('crew') is not None:
@@ -85,10 +93,15 @@ def validate_definition(value):
             fields(plan, {'nodes','result_node','max_repairs','staffing'}, '工作流计划')
             if not isinstance(plan.get('nodes'), list):raise ValueError('计划须声明 nodes')
             for node in plan['nodes']:
-                fields(node, {'key','parent','unit','staff','participants','description','expected','depends_on','outputs','rules','exports','gate','repair_from'}, '工作流节点')
+                fields(node, {'key','kind','parent','unit','staff','participants','tool_ref','arguments','artifact_outputs','verification','description','expected','depends_on','outputs','rules','exports','gate','repair_from'}, '工作流节点')
                 if node.get('staff') is not None:fields(node['staff'], STAFF, '节点角色')
-    for site, required in model_sites(value):
-        if not isinstance(required,list) or any(not isinstance(cap,str) for cap in required):raise ValueError('角色能力必须为列表')
+    declared_tools = set(resources.get('tools', {}))
+    for site, capabilities in model_sites(value):
+        if not isinstance(capabilities,list) or any(not isinstance(cap,str) for cap in capabilities):raise ValueError('角色能力必须为列表')
+        granted = {cap[5:] for cap in capabilities if cap.startswith('tool:')}
+        if any(not re.fullmatch(r'tool:[A-Za-z][A-Za-z0-9_-]{0,63}',cap) for cap in capabilities if cap.startswith('tool:')) or not granted <= declared_tools:
+            raise ValueError('角色引用了未声明或无效的工具槽位')
+        required = model_capabilities(capabilities)
         slot = site.get('model')
         if 'model' in site and (not isinstance(slot,str) or slot not in models):
             raise ValueError('引用了未声明的模型能力槽位')
@@ -104,9 +117,9 @@ def definition_digest(value):
     return sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(',',':')).encode()).hexdigest()
 
 
-def bind_definition(value, bindings, choose):
+def bind_definition(value, bindings, choose, choose_tool=None):
     value = validate_definition(value)
-    fields(bindings, {'models'}, '工作流运行时绑定')
+    fields(bindings, {'models','tools'}, '工作流运行时绑定')
     models = bindings.get('models', {})
     requirements = value['resources']['models']
     if not isinstance(models, dict) or set(models) != set(requirements):
@@ -114,8 +127,16 @@ def bind_definition(value, bindings, choose):
     for slot, model in models.items():
         if not isinstance(model, str) or not model:raise ValueError('模型绑定须为本实例模型标识')
         choose(requirements[slot]['capabilities'], model)
+    from .tools import bind_tool_definitions
+    tool_requirements = value['resources'].get('tools', {})
+    if tool_requirements and choose_tool is None:
+        raise ValueError('当前安装器未配置工具绑定解析')
+    tools = bind_tool_definitions(bindings.get('tools'), tool_requirements, choose_tool or (lambda *_: None))
     from .packages import validate_package
-    return validate_package(materialize(value, models))
+    package = validate_package(materialize(value, models))
+    if 'tools' in value['resources']:
+        package['_tool_bindings'] = tools
+    return package
 
 
 def export_definition(package):
@@ -130,7 +151,7 @@ def export_definition(package):
             for field in set(member)-CREW_MEMBER:member.pop(field)
             if local_member:
                 slot=f'crew_{unit_index}_{member_index}'
-                member['model']=slot;value['resources']['models'][slot]={'capabilities':member.get('capabilities',['text'])}
+                member['model']=slot;value['resources']['models'][slot]={'capabilities':model_capabilities(member.get('capabilities',['text']))}
         local = unit.get('model_id')
         for key in set(unit)-UNIT:unit.pop(key)
         if local:
@@ -141,12 +162,14 @@ def export_definition(package):
         for key in set(agent)-AGENT:agent.pop(key)
         if local:
             slot = 'role_' + str(index)
-            agent['model'] = slot;value['resources']['models'][slot] = {'capabilities':agent.get('capabilities',['text'])}
+            agent['model'] = slot;value['resources']['models'][slot] = {'capabilities':model_capabilities(agent.get('capabilities',['text']))}
     for op_index, operation in enumerate(value['operations'].values()):
         for key in set(operation)-OPERATION:operation.pop(key)
         for node_index, node in enumerate(operation.get('execution_plan', {}).get('nodes', [])):
             staff = node.get('staff')
             if staff and staff.pop('model_id',None):
                 slot = f'node_{op_index}_{node_index}'
-                staff['model'] = slot;value['resources']['models'][slot] = {'capabilities':staff.get('capabilities',['text'])}
+                staff['model'] = slot;value['resources']['models'][slot] = {'capabilities':model_capabilities(staff.get('capabilities',['text']))}
+    if package.get('_tool_definitions') is not None:
+        value['resources']['tools'] = deepcopy(package['_tool_definitions'])
     return validate_definition(value)

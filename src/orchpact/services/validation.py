@@ -2,7 +2,7 @@
 import json
 from ..adapters.database import loads
 from ..kernel.contracts import read_json_delivery, validate
-from ..kernel.plan import values
+from ..kernel.plan import values, is_execution
 
 class DeliveryContracts:
     def __init__(self, service):
@@ -10,7 +10,7 @@ class DeliveryContracts:
 
     def node(self, c, task):
         node = loads(task['definition'])
-        return node if node.get('staff') else None
+        return node if is_execution(node) else None
 
     def documents(self, c, task):
         docs = {}
@@ -37,8 +37,15 @@ class DeliveryContracts:
                     read_json_delivery(file.get('content', file.get('data')))
             return
         from ..kernel.contracts import validate
+        from .tool_artifacts import inspect_media
         actual={f['path']:f for f in files}
-        if set(actual)!=set(node['outputs']) or len(actual)!=len(files):raise ValueError('阶段交付文件必须恰好为：'+','.join(node['outputs']))
+        expected=set(node['outputs'])|set(node.get('artifact_outputs',{}))
+        if set(actual)!=expected or len(actual)!=len(files):raise ValueError('阶段交付文件必须恰好为：'+','.join(sorted(expected)))
+        for path,contract in node.get('artifact_outputs',{}).items():
+            data=actual[path].get('data')
+            if data is None:data=actual[path]['content'].encode('utf-8')
+            if len(data)>contract['max_bytes']:raise ValueError('Artifact 超过节点大小限制：'+path)
+            inspect_media(data,contract['media_type'],path)
         docs=self.documents(c,task)
         for path,schema in node['outputs'].items():
             f=actual[path];raw=f.get('content')

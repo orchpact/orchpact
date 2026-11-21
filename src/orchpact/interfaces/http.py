@@ -17,7 +17,7 @@ from ..adapters.identity import Principal, principal
 from ..bootstrap import Instance
 from .. import __version__
 from ..kernel.errors import DomainError, Forbidden, NotFound
-from ..kernel.models import Strict, UnitInput, AgentInput, ImageRequest, Command, MandateInput, WorkflowBinding
+from ..kernel.models import Strict, UnitInput, AgentInput, ImageRequest, Command, MandateInput, WorkflowBinding, TemplatePreviewInput
 from ..application_keys import ApplicationKeys, PublicKeyInput
 from ..sites import product, audience, account_page_html, frontend_file
 from .surface import product_path
@@ -247,6 +247,16 @@ def create_app(settings, run_worker=True, executor=None):
     def install_package(application: str, data: WorkflowInstallation = Body(default=WorkflowInstallation()), expected_revision: int | None = Query(default=None,ge=0), binding_revision: int | None = Query(default=None,ge=1), ctx=Depends(context)):
         return service().install_package(ctx, application, expected_revision=expected_revision,bindings=data.bindings,binding_revision=binding_revision)
 
+    @app.get('/api/v1/workflow-templates')
+    def workflow_templates(ctx=Depends(admin)):
+        from ..kernel.templates import list_templates
+        return list_templates()
+
+    @app.post('/api/v1/workflow-templates/{template_id}/preview')
+    def workflow_template_preview(template_id: str, data: TemplatePreviewInput, ctx=Depends(admin)):
+        from ..kernel.templates import preview_template
+        return preview_template(template_id, data.sha256, data.parameters)
+
     @app.post('/api/v1/workflows/validate')
     def validate_workflow(data: dict, ctx=Depends(context)):
         from ..kernel.workflows import validate_definition,definition_digest
@@ -383,6 +393,23 @@ def create_app(settings, run_worker=True, executor=None):
             service().scope(c, ctx, service().row(c, 'projects', r['project_id']))
         path = service().settings.data / 'receipts' / r['attempt_id'] / (r['id'] + '.json')
         return dict(request=r, receipt=loads(path.read_text()) if path.is_file() else None)
+
+    @app.post('/api/v1/tool-invocations/{tool_call_id}/reconcile')
+    def reconcile_tool(tool_call_id: str, ctx=Depends(context)):
+        from ..services.tools import ToolCallError
+        try:
+            return service().tools.lookup(ctx,tool_call_id)
+        except ToolCallError as exc:
+            from ..kernel.errors import DomainError
+            raise DomainError(exc.code,str(exc)) from None
+
+    @app.get('/api/v1/verification-evidence/{key}')
+    def verification_evidence(key: str, ctx=Depends(context)):
+        with service().db.connect() as c:
+            row=service().row(c,'verification_evidence',key)
+            service().scope(c,ctx,service().row(c,'projects',row['project_id']))
+        path=service().settings.data/'verification-evidence'/row['attempt_id']/(row['id']+'.json')
+        return dict(evidence=service().verifications.public(row),bundle=loads(path.read_text()) if path.is_file() else None)
 
     def artifact(ctx, key):
         with service().db.connect() as c:

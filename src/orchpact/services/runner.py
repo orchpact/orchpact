@@ -18,11 +18,13 @@ class Runner:
         self.last_janitor = None
 
     def recover(self):
+        self.service.tools.recover()
         from .agent_steps import recover_steps
         recover_steps(self.service)
         providers = getattr(self.executor, 'providers', None)
         if providers:
             providers.recover_receipts()
+        self.service.verifications.recover()
         with self.service.db.tx() as c:
             c.execute("UPDATE attempts SET status='interrupted',finished=%s WHERE status='running'", (now(),))
             c.execute("UPDATE tasks SET status='interrupted',error='执行中断，请先核对真实回执再明确重试' WHERE status='running'")
@@ -40,11 +42,13 @@ class Runner:
         if self.last_janitor is None or time.monotonic()-self.last_janitor>3600:
             self.service.janitor()
             self.last_janitor=time.monotonic()
+        if self.service.verifications.step():return True
         ctx = self.service.claim()
         if not ctx:
             return False
         try:
             self.executor.execute(ctx)
+            self.service.verifications.step()
         except Exception as exc:
             # Public errors carry types/validation only, never transport bodies or credentials.
             error = str(exc) if isinstance(exc, (ValueError, KeyError)) else type(exc).__name__

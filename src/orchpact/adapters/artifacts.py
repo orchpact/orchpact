@@ -28,7 +28,11 @@ class Artifacts:
             name,data,media='deliverables.zip',stream.getvalue(),'application/zip'
         else:
             name,data=encoded[0]
-            media={'.json':'application/json','.md':'text/markdown','.txt':'text/plain','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp'}.get(Path(name).suffix.lower(),'application/octet-stream')
+            media={'.json':'application/json','.md':'text/markdown','.txt':'text/plain','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp',
+                '.pdf':'application/pdf','.zip':'application/zip',
+                '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                '.pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation'}.get(Path(name).suffix.lower(),'application/octet-stream')
         aid=ident(); dest=self.root/aid
         tmp=self.root/(aid+'.tmp')
         try:

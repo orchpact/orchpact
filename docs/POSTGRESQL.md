@@ -19,7 +19,7 @@ uv run orchpact --root /absolute/path/to/orchpact-instance serve
 
 Orchpact 账号只需拥有自己的数据库和 public schema，运行阶段无需超级用户或 CREATEDB 权限。不与其他应用共用数据库，不使用事务池代理：实例所有权依赖一个持续存在的 PostgreSQL 会话。保持数据库 `fsync` / `full_page_writes` 开启，Orchpact 连接强制同步提交。大整数用于积分微单位；JSON 快照仍按不可变文本序列化，查询使用原生 JSONB 表达式。
 
-首次启动在双重独占锁下创建 schema 和迁移台账，写入 `orchpact-postgresql-v1` 格式标识，再将库与 `var/database-instance` 绑定。已初始化的库不能配一个空文件目录；恢复必须使用配套的标识、产物和回执。未标记的非空数据库拒绝初始化。文件目录和数据库都只允许一个 Orchpact 主进程。
+首次启动在双重独占锁下创建完整当前 schema 和迁移台账，写入 `orchpact-postgresql-v1` 格式标识，再将库与 `var/database-instance` 绑定。已有实例不会在初始化中通过 `CREATE TABLE IF NOT EXISTS` 隐式增加新表，而是在独占锁下执行命名迁移。`0002_tool_runtime` 增加 `projects.tool_limit`、工具调用台账和索引；`0003_verification_evidence` 增加不可变验证证据及当前 Artifact 查询索引。迁移执行前自动 pg_dump；历史项目额度为 0，不伪造工具或验证记录。已初始化的库不能配一个空文件目录；恢复必须使用配套标识、Artifact、工具回执和 `var/verification-evidence/`。未标记的非空数据库拒绝初始化。文件目录和数据库都只允许一个 Orchpact 主进程。
 
 所有业务写事务共用事务级 advisory lock，确保预算、预留、任务领取、幂等、状态与审计原子提交。读连接独立使用 MVCC；不宣称支持多主调度。数据库所有权会话丢失后 readyz 失败，后续写入拒绝，需运维确认后重启。未知外部请求继续先恢复回执，不自动重发。
 

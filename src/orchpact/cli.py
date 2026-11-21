@@ -46,6 +46,11 @@ def main():
     commands.add_parser('check')
     workflow=commands.add_parser('workflow-check', help='Validate a portable definition without instance configuration')
     workflow.add_argument('definition',type=Path)
+    expand=commands.add_parser('component-expand',help='Expand fixed local JSON components without instance configuration')
+    expand.add_argument('author',type=Path)
+    expand.add_argument('--components-dir',type=Path,required=True)
+    expand.add_argument('--output',type=Path,required=True)
+    expand.add_argument('--report',type=Path,required=True)
     backup = commands.add_parser('backup')
     backup.add_argument('destination')
     args = parser.parse_args()
@@ -55,6 +60,15 @@ def main():
             value=validate_definition(json.loads(args.definition.read_text()))
             print('工作流定义校验通过：'+value['id']+' / '+value['version'])
             print('SHA-256 '+definition_digest(value))
+            return
+        if args.command == 'component-expand':
+            from .kernel.components import expand_components
+            if args.output.exists() or args.report.exists() or args.output==args.report:raise ValueError('展开定义与报告必须是不同的新文件')
+            value,report=expand_components(json.loads(args.author.read_text()),args.components_dir)
+            for path,payload in ((args.output,value),(args.report,report)):
+                path.parent.mkdir(parents=True,exist_ok=True)
+                with path.open('x') as stream:stream.write(json.dumps(payload,ensure_ascii=False,indent=2)+'\n')
+            print('组件展开完成：'+report['definition_sha256']+'；'+str(len(report['components']))+' 个实例')
             return
         if args.command == 'init':
             root = initialize(args.root)
