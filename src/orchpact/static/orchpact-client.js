@@ -1,17 +1,15 @@
 (function(root,factory){const value=factory();if(typeof module==='object'&&module.exports)module.exports=value;else {root.OrchpactClient=value;}})(typeof globalThis!=='undefined'?globalThis:this,function(){
  'use strict';
  return class OrchpactClient {
-  constructor(fetchImpl=globalThis.fetch.bind(globalThis),appId=globalThis.document?.body?.dataset?.orchpactApp||''){this.fetch=fetchImpl;this.app='apps/'+encodeURIComponent(appId);}
+  constructor(fetchImpl=globalThis.fetch.bind(globalThis),workflowId=globalThis.document?.body?.dataset?.orchpactWorkflow||''){this.fetch=fetchImpl;this.workflow='workflows/'+encodeURIComponent(workflowId);}
   async call(path,method='GET',body,headers={}){
    const response=await this.fetch('/api/v1/'+path,{method,headers:{'Content-Type':'application/json',...headers},credentials:'same-origin',...(body===undefined?{}:{body:JSON.stringify(body)})});
    let value;try{value=await response.json();}catch{throw Error('服务暂时无法响应，请稍后重新连接');}
    if(!response.ok){const message=typeof value.detail==='string'?value.detail:response.status===422?'输入未通过结构校验':'请求失败';const error=Error(response.status===401?'会话已过期，请重新连接':message);error.status=response.status;error.httpStatus=response.status;error.code=value.code;throw error;}return value;
   }
-  document(key){return this.call(this.app+'/documents/'+encodeURIComponent(key));}
-  saveDocument(key,revision,value){return this.call(this.app+'/documents/'+encodeURIComponent(key),'PUT',{revision,value});}
-  invoke(payload,key){return this.call(this.app+'/runs','POST',payload,{'Idempotency-Key':key});}
-  invocation(id){return this.call(this.app+'/runs/'+encodeURIComponent(id));}
-  invocations(){return this.call(this.app+'/runs');}
+  invoke(payload,key){return this.call(this.workflow+'/runs','POST',payload,{'Idempotency-Key':key});}
+  invocation(id){return this.call('runs/'+encodeURIComponent(id));}
+  invocations(){return this.call(this.workflow+'/runs');}
   async receipt(id){return (await this.call('requests/'+encodeURIComponent(id))).receipt;}
   cancel(project){return this.call('runs/'+encodeURIComponent(project)+'/cancel','POST',{});}
   retry(task){return this.call('work-items/'+encodeURIComponent(task)+'/retry','POST',{}, {'Idempotency-Key':globalThis.crypto.randomUUID()});}

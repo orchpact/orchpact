@@ -25,6 +25,8 @@ class Platform:
         self.policies = Governance(self)
         from .workflows import WorkflowCatalog
         self.workflows=WorkflowCatalog(self)
+        from .delivery import WorkflowDelivery
+        self.delivery=WorkflowDelivery(self)
         from .validation import DeliveryContracts
         self.contracts = DeliveryContracts(self)
         from .tools import ToolRuntime
@@ -227,7 +229,7 @@ class Platform:
             bindings=bindings if bindings is not None else (loads(old['manifest']).get('_workflow',{}).get('bindings',{}) if old else {})
             def choose_tool(requirement, tool_binding):
                 if ctx is None:raise ValueError('工具绑定需要 Workspace 与应用上下文')
-                return self.configuration.resolve_tool(requirement,tool_binding,ctx.workspace_id,binding['id'])['binding']
+                return self.configuration.resolve_tool(requirement,tool_binding,ctx.workspace_id,binding['id'],manifest['id'])['binding']
             result=bind_definition(manifest,bindings,self.settings.choose,choose_tool)
             tool_bindings=result.pop('_tool_bindings',None)
             provenance=binding.get('workflow') or dict(id=manifest['id'],version=manifest['version'],revision=binding['revision'],sha256=definition_digest(manifest))
@@ -336,13 +338,13 @@ class Platform:
             raise ValueError('已安装工具绑定不完整')
         result = {}
         for slot, definition in definitions.items():
-            resolved = self.configuration.resolve_tool(definition,selected[slot],ctx.workspace_id,app)
+            resolved = self.configuration.resolve_tool(definition,selected[slot],ctx.workspace_id,app,workflow.get('id'))
             if resolved['binding'] != expected[slot]:
                 raise ValueError('工具配置已变化，请登记新应用修订并显式升级安装')
             result[slot] = dict(definition=deepcopy(definition),binding=resolved['binding'],provider=resolved['provider'])
         return result
 
-    def invoke(self, ctx, app, data, key):
+    def invoke(self, ctx, app, data, key, c=None):
         if not isinstance(key, str) or not 1 <= len(key) <= 100:
             raise ValueError('需要 Idempotency-Key')
         if ctx.application_id and ctx.application_id != app:
@@ -351,7 +353,7 @@ class Platform:
         request_key = sha256((ctx.workspace_id + ':' + key).encode()).hexdigest()
         if len(dumps(data)) > 100000:
             raise ValueError('委托输入超过 10 万字符')
-        with self.db.tx() as c:
+        with self.db.tx() if c is None else nullcontext(c) as c:
             old = c.execute('SELECT * FROM invocations WHERE application_id=%s AND request_key=%s', (app, request_key)).fetchone()
             if old:
                 if old['fingerprint'] != fingerprint:
@@ -452,7 +454,7 @@ class Platform:
         c.execute('INSERT INTO tasks(id,project_id,parent_id,unit_id,agent_id,kind,phase,status,description,expected,snapshot,created,definition,node_key) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                   (key, project['id'], parent, unit, agent, kind, phase, status, description, expected, dumps(snapshot), now(), dumps(definition), definition.get('key')))
         subject = 'task:' + key
-        actions = ['call', 'publish', 'ask'] if a or tool_node else sorted(self.policies.ACTIONS)
+        actions = ['call', 'publish', 'ask'] if a or tool_node else sorted(self.policies.ACTIONS - {'amend'})
         if tool_node:capabilities=sorted('tool:'+slot for slot in required_slots)
         else:
             capabilities = sorted(set(loads(a['capabilities'])) | ({'text','json'} if profile['kind']=='text' else set())) if a else sorted({cap for item in self.settings.catalog() for cap in item['capabilities']})
@@ -566,12 +568,22 @@ class Platform:
         for member in context['members']:
             member['capabilities'] = loads(member['capabilities'])
         if operation:
-            context['application'] = dict(application_id=binding['application_id'], operation=binding['operation'], instruction=operation['instruction'], input=loads(binding['input']), output_file=operation['output_file'], output_schema=operation.get('output_schema'), output_kind=operation.get('output_kind','json'), artifact_output=operation.get('artifact_output'), delivery_context_limit=limit)
+            context['application'] = dict(workflow_id=operation.get('workflow',{}).get('id'),application_id=binding['application_id'], operation=binding['operation'], instruction=operation['instruction'], input=loads(binding['input']), output_file=operation['output_file'], output_schema=operation.get('output_schema'), output_kind=operation.get('output_kind','json'), artifact_output=operation.get('artifact_output'), delivery_context_limit=limit)
             if operation.get('image_request'):
                 context['snapshot']['image_request'] = operation['image_request']
         if is_execution(node):
             context['planned_node'] = node
             context['plan_nodes'] = [dict(key=r['node_key'], task_id=r['id'], outputs=list(loads(r['definition']).get('outputs', {}))) for r in c.execute('SELECT id,node_key,definition FROM tasks WHERE project_id=%s AND node_key IS NOT NULL', (p['id'],))]
+            if node_kind(node)=='agent' and task['generation']>1:
+                rework=c.execute("SELECT detail FROM events WHERE project_id=%s AND kind='plan.rework' AND detail::jsonb->'affected' ? %s ORDER BY id DESC LIMIT 1",(p['id'],task['id'])).fetchone()
+                detail=loads(rework['detail']) if rework else {}
+                if task['id'] in detail.get('targets',[]) and detail.get('generations',{}).get(task['id'])==task['generation']:
+                    previous=c.execute('SELECT * FROM artifacts WHERE project_id=%s AND task_id=%s AND attempt_id!=%s ORDER BY created DESC,id DESC LIMIT 1',(p['id'],task['id'],task['attempt_id'])).fetchone()
+                    if previous:
+                        remaining=max(0,240000-sum(len(f['content']) for d in deliveries for f in d['files']))
+                        context['repair_candidate']=dict(self.artifacts.excerpts(dict(previous),min(limit,remaining)),
+                            task_id=task['id'],attempt_id=previous['attempt_id'],accepted=False,
+                            instruction='这是本任务上一次候选，仅供修正；已经失效，不是当前已验收输入。依照返工要求修复具体缺陷并保留其余合规内容，仍须重新验证。complete=false 时不得声称读过完整原文。')
             if node_kind(node)=='agent' and any(not d['complete'] for d in deliveries):
                 context['input_error'] = '阶段依赖包含未完整提供的文件，拒绝仅凭摘录执行'
             if node_kind(node)=='agent' and sum(len(f['content']) for d in deliveries for f in d['files']) > 240000:
@@ -624,6 +636,8 @@ class Platform:
 
     def invalidate(self, c, project, affected, feedback):
         affected = set(affected)
+        targets = set(affected)
+        generations = {}
         changed = True
         while changed:
             before = set(affected)
@@ -639,10 +653,15 @@ class Platform:
             if t['status'] == 'running':
                 raise DomainError('work_in_flight', '受影响的工作仍在执行，请先等待或取消')
             status = 'waiting' if t['kind'] == 'group' else 'queued'
-            c.execute("UPDATE tasks SET status=%s,review='pending',artifact_id=NULL,result=NULL,error=NULL,generation=generation+1,description=description||%s WHERE id=%s", (status, '\n返工要求：' + feedback[:4000], key))
+            # Downstream stages rerun against new inputs; an upstream finding is
+            # not an outstanding defect in their own current work. In particular,
+            # reviewers must assess the new artifact rather than repeat old findings.
+            request = '\n返工要求：' + feedback[:4000] if key in targets else ''
+            c.execute("UPDATE tasks SET status=%s,review='pending',artifact_id=NULL,result=NULL,error=NULL,generation=generation+1,description=description||%s WHERE id=%s", (status, request, key))
+            generations[key]=t['generation']+1
         c.execute('UPDATE invocations SET result=NULL WHERE id=%s', (project,))
         c.execute("UPDATE projects SET status='running' WHERE id=%s", (project,))
-        self.db.event(c, project, None, 'plan.rework', affected=sorted(affected))
+        self.db.event(c, project, None, 'plan.rework', affected=sorted(affected), targets=sorted(targets), generations=generations)
 
     def repair(self, c, project, task, node, issues, reason):
         planrow = c.execute('SELECT * FROM execution_plans WHERE project_id=%s', (project,)).fetchone()
@@ -1039,7 +1058,34 @@ class Platform:
             self.db.event(c, project, None, 'command.applied', action=action, subject=ctx.subject, operation_key=command.key)
             return value
 
+    def acceptance_dependencies(self, c, project):
+        """Keep declared checks and their input/aggregation paths mandatory."""
+        tasks={row['id']:dict(row) for row in c.execute('SELECT * FROM tasks WHERE project_id=%s',(project,))}
+        checks={key for key,task in tasks.items() if
+            any(loads(task['definition']).get(field) for field in ('gate','verification','rules')) or
+            any(row['policy']['independent_review'] for row in loads(task['snapshot']).get('policies',[]))}
+        edges={key:set() for key in tasks}
+        for row in c.execute('SELECT d.task_id,d.depends_on FROM dependencies d JOIN tasks t ON t.id=d.task_id WHERE t.project_id=%s',(project,)):
+            edges[row['task_id']].add(row['depends_on'])
+        required=set(checks)
+        pending=list(required)
+        while pending:
+            key=pending.pop()
+            sources=edges[key] | {child for child,task in tasks.items() if task['parent_id']==key}
+            for source in sources-required:
+                required.add(source);pending.append(source)
+        # Ancestors may not be cancelled to hide a required check. Their unrelated
+        # children do not become mandatory merely because they share a parent.
+        protected=set(required)
+        for key in required:
+            parent=tasks[key]['parent_id']
+            while parent:
+                protected.add(parent);parent=tasks[parent]['parent_id']
+        return checks,protected,edges
+
     def amend(self, c, ctx, project, payload):
+        if ctx.subject_type != 'user':
+            raise Forbidden('执行主体不能修改已受理计划；计划变更须由获授权用户提交')
         reason = payload.get('reason','')
         if not isinstance(reason,str):raise ValueError('计划变更理由必须是文本')
         reason=reason.strip()
@@ -1047,6 +1093,7 @@ class Platform:
         additions = payload.get('add_nodes', [])
         if not isinstance(reason,str) or not reason or len(reason)>2000 or not isinstance(changes,list) or not isinstance(additions,list) or not (changes or additions) or len(changes) + len(additions) > 20:
             raise ValueError('计划变更需要理由和有界改动')
+        checks,protected,edges=self.acceptance_dependencies(c,project['id'])
         for change in changes:
             if not isinstance(change,dict):raise ValueError('节点变更必须是对象')
             for field,limit in [('description',12000),('expected',3000)]:
@@ -1058,6 +1105,14 @@ class Platform:
                 raise DomainError('amendment_conflict', '首版只允许调整尚未开始的工作')
             if set(change) - {'task_id', 'description', 'expected', 'depends_on', 'cancel'}:
                 raise ValueError('计划变更包含未支持的字段')
+            if change.get('cancel') and task['id'] in protected:
+                raise DomainError('acceptance_locked','不能取消已冻结的验收检查、输入或汇总路径；请发布新定义并发起新执行')
+            if task['id'] in checks and any(change.get(field,task[field])!=task[field] for field in ('description','expected')):
+                raise DomainError('acceptance_locked','不能改写已冻结的验收要求；请发布新定义并发起新执行')
+            if 'depends_on' in change:
+                removed=edges[task['id']]-set(change['depends_on'])
+                if removed and (task['id'] in protected or removed & protected):
+                    raise DomainError('acceptance_locked','不能移除已冻结的验收或输入依赖；请发布新定义并发起新执行')
             if change.get('cancel'):
                 definition = loads(task['definition']);definition['active'] = False
                 c.execute("UPDATE tasks SET status='cancelled',definition=%s WHERE id=%s", (dumps(definition),task['id']))

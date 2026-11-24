@@ -59,6 +59,10 @@ jobs:
       - run: node --test tests/*.test.cjs
       - run: uv run python evals/run.py --output /tmp/orchpact-eval.json
       - run: uv run python evals/verify_contracts.py --output /tmp/orchpact-contracts.json
+      - run: uv run python examples/verified-delivery.py --output /tmp/orchpact-delivery-demo.json
+      - run: uv run python examples/fulfillment/run.py --output /tmp/orchpact-fulfillment-demo.json
+      - run: uv run python examples/mystery-story/run.py --output /tmp/orchpact-mystery-demo.json
+      - run: uv run python examples/mystery-story/run.py --case await-human --simulate-approval --output /tmp/orchpact-mystery-approved.json
       - run: uv run python scripts/smoke_release.py --output /tmp/orchpact-smoke.json
       - run: uv build
   standalone:

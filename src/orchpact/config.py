@@ -41,30 +41,14 @@ class Settings:
                 raise ValueError("public_origin 必须是无路径的HTTPS域名，例如https://example.com")
             object.__setattr__(self,"local_access",False)
         if not isinstance(self.products,dict):raise ValueError("products 必须是应用到HTTPS域名的映射")
-        if self.products:
-            if not self.public_origin:raise ValueError("配置产品域名必须同时配置public_origin管理域名")
-            seen={urlparse(self.public_origin).hostname}
-            for app,origin in self.products.items():
-                if app not in self.frontends:raise ValueError("产品域名未对应已配置的前端："+app)
-                if not isinstance(origin,str):raise ValueError("产品域名必须为字符串")
-                u=urlparse(origin)
-                try:u.port
-                except ValueError:raise ValueError("产品域名端口无效") from None
-                if u.scheme!="https" or not u.hostname or u.username or u.password or u.query or u.fragment or u.path:
-                    raise ValueError("产品域名必须是无路径的HTTPS域名")
-                if u.hostname in seen:raise ValueError("管理域名和产品域名不能重复")
-                seen.add(u.hostname)
+        if self.products or self.frontends:
+            raise ValueError('子应用域名与前端托管已移除；请移出 products/frontends 配置，使用工作流直接执行')
         if type(self.workers) is not int or not 1 <= self.workers <= 64:
             raise ValueError("execution.workers 必须为1到64的整数")
         if type(self.max_tasks_per_project) is not int or not 1 <= self.max_tasks_per_project <= self.workers:
             raise ValueError("execution.max_tasks_per_project 必须为1到workers的整数")
 
-    def product_for_host(self,host):
-        return next((app for app,origin in self.products.items() if urlparse(origin).hostname==host),None)
-
     def origin_for_host(self,host):
-        app=self.product_for_host(host)
-        if app:return self.products[app]
         if self.public_origin and urlparse(self.public_origin).hostname==host:return self.public_origin
         return None
 

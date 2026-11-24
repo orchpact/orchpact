@@ -17,11 +17,8 @@ from ..adapters.identity import Principal, principal
 from ..bootstrap import Instance
 from .. import __version__
 from ..kernel.errors import DomainError, Forbidden, NotFound
-from ..kernel.models import Strict, UnitInput, AgentInput, ImageRequest, Command, MandateInput, WorkflowBinding, TemplatePreviewInput
-from ..application_keys import ApplicationKeys, PublicKeyInput
-from ..sites import product, audience, account_page_html, frontend_file
-from .surface import product_path
-from .context import from_actor, ApplicationService
+from ..kernel.models import Strict, UnitInput, AgentInput, ImageRequest, Command, MandateInput, TemplatePreviewInput
+from .context import from_actor
 
 STATIC = Path(__file__).resolve().parents[1] / 'static'
 
@@ -48,6 +45,13 @@ class Answer(Strict):
 class WorkflowInstallation(Strict):
     bindings: dict | None = None
 
+class DirectInstallation(Strict):
+    workflow_revision: int = Field(ge=1)
+    bindings: dict
+
+class InstallWorkflow(DirectInstallation):
+    expected_revision: int = Field(ge=0)
+
 
 def create_app(settings, run_worker=True, executor=None):
     instance = Instance(settings, executor)
@@ -59,7 +63,6 @@ def create_app(settings, run_worker=True, executor=None):
         app.state.runner = instance.runner
         app.state.access = instance.service.access
         app.state.instance = instance
-        app.state.keys = ApplicationKeys(ApplicationService(instance.service))
         try:
             if run_worker:
                 instance.runner.start()
@@ -75,7 +78,9 @@ def create_app(settings, run_worker=True, executor=None):
         return app.state.service
 
     def session_audience(request):
-        return audience(settings, request)
+        # Preserve existing platform sessions. Former product audiences are never
+        # accepted on this single platform surface.
+        return ''
 
     def trusted_origin(request):
         expected = settings.origin_for_host(request.url.hostname) or settings.public_origin or str(request.base_url).rstrip('/')
@@ -83,34 +88,24 @@ def create_app(settings, run_worker=True, executor=None):
             raise HTTPException(403, '不允许跨站请求')
 
     async def auth(request: Request, credential: HTTPAuthorizationCredentials | None = Depends(bearer)):
-        app_id = product(settings, request)
-        signed = any(k.startswith('x-orchpact-') for k in request.headers)
-        if signed:
-            actor = await app.state.keys.authenticate(request, app_id)
+        if any(key.startswith('x-orchpact-') for key in request.headers):
+            raise Forbidden('子应用签名接入已移除，请使用个人会话或管理员 API')
+        token = credential.credentials if credential else request.cookies.get('orchpact_session', '')
+        if credential and hmac.compare_digest(token, settings.token):
+            actor = Principal(instance.admin_user, True, instance.admin_workspace)
         else:
-            token = credential.credentials if credential else request.cookies.get('orchpact_session', '')
-            if credential and hmac.compare_digest(token, settings.token):
-                actor = Principal(instance.admin_user, True, instance.admin_workspace)
-            else:
-                actor = service().access.authenticate(token, audience(settings, request) if settings.products else None)
-                if not credential:
-                    trusted_origin(request)
-            if app_id and actor.admin:
-                raise Forbidden('产品入口不接受管理身份')
-            workspace=request.headers.get('X-Workspace-Id')
-            if re.fullmatch(r'/api/v1/(artifacts/[^/]+/(download|preview)|requests/[^/]+|apps/[^/]+/definition)',request.url.path):
-                workspace=workspace or request.query_params.get('workspace')
-            actor = service().access.scope(actor, workspace)
-            if actor.admin and not actor.workspace_id:
-                actor = replace(actor, workspace_id=instance.admin_workspace)
-            actor = replace(actor, application_id=app_id)
-            match = re.match(r'/api/v1/apps/([a-zA-Z0-9_-]+)', request.url.path)
-            binding = match.group(1) if match else app_id
-            if binding and not actor.admin and not request.url.path.startswith(('/api/v1/auth/', '/api/v1/workspaces', '/api/v1/session')):
-                with service().db.connect() as c:
-                    row = c.execute('SELECT require_signature FROM applications WHERE id=%s', (binding,)).fetchone()
-                if row and row['require_signature']:
-                    raise Forbidden('此应用需要签名网关')
+            actor = service().access.authenticate(token, session_audience(request))
+            if not credential:trusted_origin(request)
+        workspace=request.headers.get('X-Workspace-Id')
+        if re.fullmatch(r'/api/v1/(artifacts/[^/]+/(download|preview)|requests/[^/]+|apps/[^/]+/definition)',request.url.path):
+            workspace=workspace or request.query_params.get('workspace')
+        actor=service().access.scope(actor,workspace)
+        if actor.admin and not actor.workspace_id:actor=replace(actor,workspace_id=instance.admin_workspace)
+        legacy=re.match(r'/api/v1/apps/([a-zA-Z0-9_-]+)',request.url.path)
+        if legacy and not actor.admin:
+            with service().db.connect() as c:
+                row=c.execute('SELECT require_signature FROM applications WHERE id=%s',(legacy.group(1),)).fetchone()
+            if row and row['require_signature']:raise Forbidden('旧签名范围仅供管理员查看或导出；请迁移为直接工作流安装')
         marker = principal.set(actor)
         try:
             yield actor
@@ -138,21 +133,9 @@ def create_app(settings, run_worker=True, executor=None):
             return JSONResponse(status_code=403, content={'detail': 'Host 不受信任'})
         if settings.local_access and host not in ('localhost', '127.0.0.1', '::1', 'testserver'):
             return JSONResponse(status_code=403, content={'detail': 'Host 不受信任'})
-        app_id = product(settings, request)
         path = request.url.path
         if path=='/static/account/index.html' or path.endswith('/integration.json'):
             return JSONResponse(status_code=404,content={'detail':'资源不存在'})
-        if settings.products and any(path==v['route'] or path.startswith(v['route'].rstrip('/')+'/') for v in settings.frontends.values()):
-            return JSONResponse(status_code=404,content={'detail':'资源不存在'})
-        if app_id:
-            if any(path==v['route'] or path.startswith(v['route'].rstrip('/')+'/') for v in settings.frontends.values()):
-                return JSONResponse(status_code=404,content={'detail':'资源不存在'})
-            if path.startswith('/api/') and not product_path(app_id, path, request.method):
-                return JSONResponse(status_code=404, content={'detail': '接口不存在'})
-            if path.startswith(('/admin', '/about', '/api-assets')) or path in ('/healthz', '/readyz'):
-                return JSONResponse(status_code=404, content={'detail': '资源不存在'})
-            if path.startswith('/static/') and not path.startswith('/static/account/') and path not in ('/static/orchpact-client.js',):
-                return JSONResponse(status_code=404, content={'detail': '资源不存在'})
         if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
             size, chunks = 0, []
             async for chunk in request.stream():
@@ -205,12 +188,10 @@ def create_app(settings, run_worker=True, executor=None):
     @app.post('/api/v1/session')
     def login(data: Login, request: Request, response: Response):
         trusted_origin(request)
-        if product(settings, request):
-            raise Forbidden()
         service().access.throttle('admin:' + (request.client.host if request.client else 'unknown'))
         if not hmac.compare_digest(data.token, settings.token):
             raise HTTPException(401, '管理凭据无效')
-        cookie(response, request, service().access.session(instance.admin_user, admin=True, audience=audience(settings, request)))
+        cookie(response, request, service().access.session(instance.admin_user, admin=True, audience=session_audience(request)))
         return dict(ok=True)
 
     @app.delete('/api/v1/session', dependencies=[Depends(auth)])
@@ -239,11 +220,11 @@ def create_app(settings, run_worker=True, executor=None):
     def configuration_history():
         return service().configuration.history()
 
-    @app.post('/api/v1/organization-packages')
+    @app.post('/api/v1/organization-packages', deprecated=True)
     def package(data: dict, revision: int = Query(default=0, ge=0), ctx=Depends(admin)):
         return service().register_package(ctx, data, revision)
 
-    @app.post('/api/v1/apps/{application}/install')
+    @app.post('/api/v1/apps/{application}/install', include_in_schema=False)
     def install_package(application: str, data: WorkflowInstallation = Body(default=WorkflowInstallation()), expected_revision: int | None = Query(default=None,ge=0), binding_revision: int | None = Query(default=None,ge=1), ctx=Depends(context)):
         return service().install_package(ctx, application, expected_revision=expected_revision,bindings=data.bindings,binding_revision=binding_revision)
 
@@ -280,67 +261,64 @@ def create_app(settings, run_worker=True, executor=None):
         result=service().workflows.read(ctx,workflow,revision)
         return JSONResponse(result['definition'],headers={'Content-Disposition':'attachment; filename="'+result['id']+'.json"','X-Workflow-SHA256':result['sha256']})
 
-    @app.post('/api/v1/apps/{application}/binding')
-    def bind_workflow(application: str, data: WorkflowBinding, ctx=Depends(admin)):
-        return service().workflows.bind(ctx,application,data.model_dump())
+    @app.post('/api/v1/workflows/{workflow}/preview')
+    def preview_direct(workflow: str,data: DirectInstallation,ctx=Depends(context)):
+        return service().delivery.preview(ctx,workflow,data.workflow_revision,data.bindings)
 
-    @app.get('/api/v1/apps/{application}/definition')
+    @app.get('/api/v1/workflows/{workflow}/installation')
+    def installed_direct(workflow: str,ctx=Depends(context)):
+        return service().delivery.installation(ctx,workflow)
+
+    @app.post('/api/v1/workflows/{workflow}/install')
+    def install_direct(workflow: str,data: InstallWorkflow,ctx=Depends(context)):
+        return service().delivery.install(ctx,workflow,data.workflow_revision,data.bindings,data.expected_revision)
+
+    @app.post('/api/v1/workflows/{workflow}/runs',status_code=201)
+    def invoke_direct(workflow: str,data: Invocation,idempotency_key: str=Header(min_length=1,max_length=100),ctx=Depends(context)):
+        return service().delivery.invoke(ctx,workflow,data.model_dump(exclude_none=True),idempotency_key)
+
+    @app.get('/api/v1/workflows/{workflow}/runs')
+    def direct_runs(workflow: str,limit: int=Query(default=100,ge=1,le=100),ctx=Depends(context)):
+        return service().delivery.runs(ctx,workflow,limit)
+
+    @app.get('/api/v1/runs/{run}')
+    def direct_run(run: str,ctx=Depends(context)):
+        return service().delivery.run(ctx,run)
+
+    @app.get('/api/v1/apps/{application}/definition', include_in_schema=False)
     def application_definition(application: str, ctx=Depends(context)):
         result=service().workflow_definition(ctx,application)
         return JSONResponse(result['definition'],headers={'Content-Disposition':'attachment; filename="'+result['definition']['id']+'.json"','X-Workflow-SHA256':result['sha256']})
 
-    @app.post('/api/v1/apps/{application}/preview')
+    @app.post('/api/v1/apps/{application}/preview', include_in_schema=False)
     def preview_workflow(application: str, data: WorkflowInstallation, ctx=Depends(context)):
         return service().preview_package(ctx,application,data.bindings)
 
-    @app.get('/api/v1/apps/{application}')
+    @app.get('/api/v1/apps/{application}', include_in_schema=False)
     def application(application: str, ctx=Depends(context)):
         return service().application(ctx, application)
 
-    @app.get('/api/v1/apps')
-    def applications(ctx=Depends(admin)):
-        with service().db.connect() as c:
-            return [service().application(ctx, row['id'], c) for row in c.execute('SELECT id FROM applications ORDER BY name')]
-
-    @app.get('/api/v1/apps/{application}/keys')
-    def keys(application: str, ctx=Depends(admin)):
-        return app.state.keys.list(application)
-
-    @app.get('/api/v1/apps/{application}/key-history')
-    def key_history(application: str, ctx=Depends(admin)):
-        with service().db.connect() as c:
-            service().application(ctx,application,c)
-            return [dict(r) for r in c.execute('SELECT * FROM application_key_audit WHERE application_id=%s ORDER BY created DESC',(application,))]
-
-    @app.post('/api/v1/apps/{application}/keys',status_code=201)
-    def add_key(application: str, data: PublicKeyInput, ctx=Depends(admin)):
-        return app.state.keys.create(application, data)
-
-    @app.delete('/api/v1/apps/{application}/keys/{key}')
-    def revoke_key(application: str, key: str, ctx=Depends(admin)):
-        return app.state.keys.revoke(application, key)
-
-    @app.get('/api/v1/apps/{application}/documents/{key}')
+    @app.get('/api/v1/apps/{application}/documents/{key}', include_in_schema=False)
     def document(application: str, key: str, ctx=Depends(context)):
         return service().document(ctx, application, key)
 
-    @app.put('/api/v1/apps/{application}/documents/{key}')
+    @app.put('/api/v1/apps/{application}/documents/{key}', include_in_schema=False)
     def save_document(application: str, key: str, data: Document, ctx=Depends(context)):
         return service().document(ctx, application, key, data.model_dump())
 
-    @app.post('/api/v1/apps/{application}/runs', status_code=201)
+    @app.post('/api/v1/apps/{application}/runs', status_code=201, include_in_schema=False)
     def invoke(application: str, data: Invocation, idempotency_key: str = Header(min_length=1, max_length=100), ctx=Depends(context)):
         return service().invoke(ctx, application, data.model_dump(exclude_none=True), idempotency_key)
 
-    @app.get('/api/v1/apps/{application}/runs')
+    @app.get('/api/v1/apps/{application}/runs', include_in_schema=False)
     def runs(application: str, limit: int = Query(default=100, ge=1, le=100), ctx=Depends(context)):
         return service().list_invocations(ctx, application, limit)
 
-    @app.get('/api/v1/apps/{application}/runs-page')
+    @app.get('/api/v1/apps/{application}/runs-page', include_in_schema=False)
     def runs_page(application: str, limit: int = Query(default=25,ge=1,le=100), cursor: str | None = Query(default=None,max_length=500),ctx=Depends(context)):
         return service().page_invocations(ctx,application,limit,cursor)
 
-    @app.get('/api/v1/apps/{application}/runs/{run}')
+    @app.get('/api/v1/apps/{application}/runs/{run}', include_in_schema=False)
     def run(application: str, run: str, ctx=Depends(context)):
         return service().invocation(ctx, application, run)
 
@@ -504,15 +482,13 @@ def create_app(settings, run_worker=True, executor=None):
         return get_swagger_ui_html(openapi_url='/api/v1/openapi.json', title='Orchpact API', swagger_js_url='/api-assets/swagger-ui-bundle.js', swagger_css_url='/api-assets/swagger-ui.css')
 
     @app.get('/account/', include_in_schema=False)
-    def account(request: Request):
-        app_id = product(settings, request)
-        directory = (settings.root / settings.frontends[app_id]['directory']) if app_id else None
-        return HTMLResponse(account_page_html(product_directory=directory))
+    def account():
+        return FileResponse(STATIC / 'account/index.html')
 
     @app.get('/admin/', include_in_schema=False)
     def console(request: Request):
         try:
-            actor = service().access.authenticate(request.cookies.get('orchpact_session', ''), audience(settings, request) if settings.products else None)
+            actor = service().access.authenticate(request.cookies.get('orchpact_session', ''), session_audience(request))
             if actor.admin:
                 return FileResponse(STATIC / 'kernel/index.html')
         except HTTPException:
@@ -524,34 +500,14 @@ def create_app(settings, run_worker=True, executor=None):
         return RedirectResponse('/admin/')
 
     @app.api_route('/', methods=['GET','HEAD'], include_in_schema=False)
-    def home(request: Request):
-        app_id = product(settings, request)
-        if app_id:
-            return FileResponse(frontend_file(settings, app_id, 'index.html'))
+    def home():
         return FileResponse(STATIC / 'showcase/index.html')
 
-    for name, frontend in settings.frontends.items():
-        if not frontend.get('enabled', True):
-            continue
-        directory = (settings.root / frontend['directory']).resolve()
-        route = frontend['route'].rstrip('/')
-        if not re.fullmatch(r'/[a-zA-Z0-9_-]+', route) or route in ('/api', '/admin', '/account', '/static', '/api-assets'):
-            raise ValueError('前端路径无效')
-        if not (directory / 'index.html').is_file():
-            raise ValueError('显式启用的前端目录不存在')
-        app.mount(route, StaticFiles(directory=directory, html=True), name='frontend-' + name)
     @app.get('/about',include_in_schema=False)
     def about_redirect():return RedirectResponse('/about/')
 
     app.mount('/about',StaticFiles(directory=STATIC/'showcase',html=True),name='design')
     app.mount('/api-assets', StaticFiles(directory=STATIC / 'vendor'), name='api-assets')
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
-
-    @app.get('/{asset:path}', include_in_schema=False)
-    def product_asset(asset: str, request: Request):
-        app_id = product(settings, request)
-        if not app_id:
-            raise NotFound()
-        return FileResponse(frontend_file(settings, app_id, asset))
 
     return app

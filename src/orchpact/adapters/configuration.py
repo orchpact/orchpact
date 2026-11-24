@@ -17,7 +17,7 @@ TOOL_FIELDS = {'tool_interface','tool_interface_version','implementation_version
 
 
 def tool_policy(value):
-    if not isinstance(value, dict) or set(value) - {'workspace_ids','application_ids','require_credential','network','max_concurrency'}:
+    if not isinstance(value, dict) or set(value) - {'workspace_ids','application_ids','workflow_ids','require_credential','network','max_concurrency'}:
         raise ValueError('工具策略包含未知字段')
     result = {}
     for field in ('workspace_ids','application_ids'):
@@ -25,6 +25,11 @@ def tool_policy(value):
         if not isinstance(rows, list) or len(rows) > 64 or any(not isinstance(item, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}', item) for item in rows) or len(rows) != len(set(rows)):
             raise ValueError('工具策略范围须为不重复的有界标识列表')
         result[field] = list(rows)
+    if 'workflow_ids' in value:
+        rows=value['workflow_ids']
+        if not isinstance(rows,list) or len(rows)>64 or any(not isinstance(item,str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,79}',item) for item in rows) or len(rows)!=len(set(rows)):
+            raise ValueError('工作流范围须为不重复的有界标识列表')
+        result['workflow_ids']=list(rows)
     require_credential = value.get('require_credential', False)
     if type(require_credential) is not bool:
         raise ValueError('工具凭据要求须为布尔值')
@@ -141,7 +146,7 @@ class ProviderConfiguration:
         _,value=self.read(c)
         return next((deepcopy(p) for p in value['providers'] if p['id']==key),None)
 
-    def resolve_tool(self, requirement, binding, workspace_id, application_id):
+    def resolve_tool(self, requirement, binding, workspace_id, application_id, workflow_id=None):
         provider = self.record(binding['endpoint_ref'])
         if not provider or provider['category'] != 'tool' or not provider['enabled']:
             raise ValueError('工具提供者不存在或已停用')
@@ -159,6 +164,8 @@ class ProviderConfiguration:
             raise ValueError('工具提供者未授权此 Workspace')
         if policy['application_ids'] and application_id not in policy['application_ids']:
             raise ValueError('工具提供者未授权此应用')
+        if policy.get('workflow_ids') and workflow_id not in policy['workflow_ids']:
+            raise ValueError('工具提供者未授权此工作流')
         if policy['require_credential'] and not self.secret(provider):
             raise ValueError('工具提供者尚未配置凭据')
         safe = dict(interface=provider['tool_interface'],interface_version=provider['tool_interface_version'],

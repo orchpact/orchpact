@@ -4,26 +4,28 @@
 
 Suggested pronunciation (US): **/ˈɔːrk.pækt/** — **ORK-pakt**, with stress on the first syllable.
 
-**Define how teams collaborate. Keep execution within its boundaries.**
+**Define the contract. Execute with agents. Verify the evidence. Accept the deliverable.**
 
 [Website](https://orchpact.github.io/) · [Getting started](docs/GETTING_STARTED.md) · [Architecture](docs/ARCHITECTURE.md) · [Online documentation](https://orchpact.github.io/docs/)
 
-**Orchpact is an open-source, self-hosted declarative workflow engine that uses CrewAI to execute agent collaboration within teams.** Authors declare teams, roles, dependencies, resource requirements, delivery contracts, and acceptance rules. Consumers install those definitions through their own application identities and Workspaces, bind local model resources, and start independent runs.
+**Orchpact is an open-source, self-hosted, contract-driven agent workflow service. CrewAI executes collaboration within teams; the platform manages artifacts, verification evidence, and acceptance.** Authors declare teams, roles, dependencies, resource requirements, delivery contracts, and acceptance rules. Consumers install those definitions in their own Workspaces, bind local model resources, and start independent runs.
+
+Fixed execution plans and explicit delivery contracts are the recommended entry point. Assurance is limited to the declared checks and recorded evidence; structurally valid output without business verification does not establish factual correctness. Autonomous planning, recruitment, and dynamic delegation remain experimental. Organization structures, templates, and components support delivery rather than a general application-hosting or operations platform.
 
 A workflow is a shareable asset with explicit version references. Different people, teams, and applications can use the same definition, while the service enforces access boundaries around accounts, model credentials, inputs, runs, artifacts, and accounting.
 
-The project ships as an **HTTP service, CLI, management console, and Docker/Compose setup**. The Python wheel installs the service. Public integration boundaries are workflow JSON, HTTP APIs, signing clients, and the CLI. This repository contains the implementation and technical documentation; the website lives in the separate [orchpact.github.io repository](https://github.com/orchpact/orchpact.github.io). Orchpact uses the [MIT License](LICENSE).
+The project ships as an **HTTP service, CLI, management console, and Docker/Compose setup**. The Python wheel installs the service. Public integration boundaries are workflow JSON, HTTP APIs, HTTP clients, and the CLI. This repository contains the implementation and technical documentation; the website lives in the separate [orchpact.github.io repository](https://github.com/orchpact/orchpact.github.io). Orchpact uses the [MIT License](LICENSE).
 
 Most linked technical guides and the website are currently in Chinese.
 
-To start with a complete application, visit the independent [examples repository](https://github.com/orchpact/examples). Fieldnote, Frame Studio, Story Atelier, and Poetry Atelier each have their own UI, workflow, and guide. A shared launcher prepares the local database, accounts, resource installation, and signing gateways.
+Start with [four executable delivery examples](examples/README.md). Run `uv run python examples/verified-delivery.py` from this repository to exercise pass, rejection, repair, and inconclusive outcomes with isolated PostgreSQL and synthetic model responses. No paid provider, child application, signing key, or gateway is required.
 
 ## Two layers of collaboration, one durable runtime
 
 ```mermaid
 flowchart TD
   D[Portable workflow definition] --> P[Publish immutable revision]
-  P --> B[Pinned application reference / Workspace resource installation]
+  P --> B[Pinned Workspace revision / resource installation]
   B --> R[Orchpact workflow / work items / attempt snapshots]
   R --> C[CrewAI team / Tasks / Agents]
   C --> E[Orchpact model and tool adapters]
@@ -37,7 +39,7 @@ flowchart TD
 
 | Boundary | Orchpact | CrewAI |
 | --- | --- | --- |
-| Definition and installation | Published revisions, application bindings, Workspace resources, and execution snapshots | Creates runtime objects from the frozen team declaration |
+| Definition and installation | Published revisions, Workspace installations and resources, and execution snapshots | Creates runtime objects from the frozen team declaration |
 | Coordination | Cross-team dependencies, work items, cancellation, retries, and rework | Sequential Tasks and context handoff between roles within a team |
 | Autonomous action | Provides models and tools constrained by permissions, scope, and budgets | Agents choose tools, inspect observations, and act over multiple turns |
 | Records and delivery | Persists provider receipts, accounting, artifacts, and acceptance records | Returns candidate results for platform validation |
@@ -46,16 +48,11 @@ flowchart TD
 
 Every model and tool call passes through platform adapters. The framework cannot expand permissions, change the payer, or accept a delivery on its own. CrewAI usage summaries are not used for billing. See [responsibilities and adapter design](docs/EXECUTION_BOUNDARY.md) and [team declarations and runtime instances](docs/TEAM_EXECUTION.md).
 
-## Define, reference, install, and run separately
+## Publish, install, and run directly
 
-| Action | What it fixes | Effect of later changes |
-| --- | --- | --- |
-| Publish a workflow | Author definition, catalog revision, and SHA-256 | Existing application references stay pinned |
-| Create an application binding | Independent application identity, workflow ID, and explicit revision | Workspace installations are not upgraded automatically |
-| Install in a Workspace | Organization instances and local model-slot bindings | Upgrades require explicit preview and confirmation |
-| Start a run | Input, provenance, participating roles, models, payer, and rule snapshots | Later definition or configuration changes do not rewrite saved snapshots |
+Publish an immutable workflow revision, preview model/tool bindings, and explicitly install it in the current Workspace. Run it through `POST /api/v1/workflows/{id}/runs` with an idempotency key; query `GET /api/v1/runs/{id}`. No consuming application, key pair, or gateway is required. Publishing does not upgrade existing installations, and installation upgrades do not rewrite prior runs or bypass their idempotency keys.
 
-The definition's `model` field names a capability slot. Consumers configure actual model IDs and credentials. Exported definitions exclude instance bindings, run history, and secrets; authors must still review prompts and business Schemas before sharing them. See [workflows, applications, and installation](docs/WORKFLOWS.md).
+The management console provides resource preview/install and direct execution on the workflow catalog page. The service still enforces Workspace membership, budgets, payer, receipts, artifacts, and acceptance. See [direct execution](docs/APPLICATIONS.md).
 
 ## Start with a team workflow
 
@@ -64,6 +61,8 @@ The definition's `model` field names a capability slot. Consumers configure actu
 1. The analysis team's `analyst` checks the original records. Its `writer` uses the team context to deliver `result.json`.
 2. A separate review team's `checker` recomputes the result and submits `audit.json` referencing the current artifact ID.
 3. Orchpact checks file contracts and review references. A rejection triggers targeted rework within the declared limit; each new artifact must be reviewed again.
+
+For source selection followed by report writing, declare separate steps as in [explicit-reference-report.json](examples/workflows/explicit-reference-report.json). The executor does not infer extra model calls or rewrite output Schemas from citation rules. This example checks structure and citations, not factual accuracy or report quality. Execution identities cannot amend admitted plans, and user amendments cannot remove required checks, their input or aggregation paths, or existing acceptance dependencies. Changed acceptance requirements need a new definition and a new run.
 
 Teams are declared in `units[].crew`. Nodes select participating roles and their order through `participants`; internal team collaboration does not create extra business work items. Model requirements and consumer bindings are stored separately:
 
@@ -82,23 +81,23 @@ uv sync --frozen
 uv run orchpact workflow-check examples/workflows/department-review.json
 ```
 
-This step requires no instance configuration, database, or model. Once an instance is running, publish the definition in the console's workflow catalog, create an independent application binding pinned to an explicit `department-review` revision, then preview and install the model bindings in the current Workspace.
+This step requires no instance configuration, database, or model. Once an instance is running, publish the definition in the console's workflow catalog, select an explicit `department-review` revision, preview its resource bindings, and install it in the current Workspace.
 
-The bundled client can also perform the initial publication, application binding, and installation:
+The bundled client can also perform the initial publication and Workspace installation:
 
 ```sh
 # Supply ORCHPACT_API_TOKEN through the environment; bindings contain only local model IDs.
 uv run python examples/register-workflow.py examples/workflows/department-review.json \
-  --application analysis-app --install --bindings /absolute/private/bindings.json
+  --install --bindings /absolute/private/bindings.json
 ```
 
-Configure a server-side signing identity as described in [application integration](docs/APPLICATIONS.md), then submit an operation:
+Use the catalog’s direct-run action or `POST /api/v1/workflows/department-review/runs` with an idempotency key, as described in [direct execution](docs/APPLICATIONS.md):
 
 ```json
 {"operation":"calculate","input":{"records":[{"id":"source-a","amount":3},{"id":"source-b","amount":5}]},"context":{}}
 ```
 
-An actual run calls the configured model and consumes credits. Application private keys stay on the application server; administrator credentials never enter the frontend. `crew_runs` and `agent_steps` associate the run with its Crews, participating roles, runtime Agents, and model/tool steps. They follow the run's access rules and do not expose private observation bodies to callers.
+An actual run calls the configured model and consumes credits. Use the platform session; administrator credentials never enter the frontend. `crew_runs` and `agent_steps` associate the run with its Crews, participating roles, runtime Agents, and model/tool steps. They follow the run's access rules and do not expose private observation bodies to callers.
 
 For a smaller calculation-and-review definition, see [evidence-review.json](examples/workflows/evidence-review.json). Both examples use the same workflow, artifact, and acceptance mechanisms.
 

@@ -3,9 +3,8 @@ from datetime import datetime, timezone
 from ..adapters.database import dumps, loads
 from ..adapters.providers import Providers
 from ..kernel.models import WorkOutput, PlanningDecision, IntakeDecision
-from ..kernel.contracts import read_json_delivery
+from ..kernel.contracts import read_json_delivery, output_model
 from ..kernel.plan import resolve_tool_arguments
-from ..reference_feedback import contracts as reference_contracts, selection_outputs, authoring_node
 from .tool_artifacts import ToolArtifacts
 
 
@@ -52,14 +51,11 @@ class CrewAIExecutor:
             goal=ctx['project']['goal'],previous_attempts=ctx['previous_attempts'],task={k:t[k] for k in ('id','description','expected','kind','phase','turns','error')},
             directory=ctx['directory'],members=ctx['members'],peers=ctx['peers'],children=ctx['children'],messages=ctx['messages'],inputs=ctx['inputs'],deliveries=ctx['deliveries'],models=ctx['models'])
         if 'application' in ctx:inputs['application']=ctx['application']
+        if 'repair_candidate' in ctx:inputs['repair_candidate']=ctx['repair_candidate']
         inputs['governance_policies']=snapshot.get('policies',[])
         if node:
             inputs['stage_contract']=node
             inputs['plan_nodes']=ctx['plan_nodes']
-            contracts=reference_contracts(node,ctx['deliveries'])
-            if contracts:
-                inputs['reference_contracts']=contracts
-                prompt+='\n若reference_contracts非空，必须同时满足其中的引用清单数量上限和完整引用闭包；先确定清单集合，再写正文及结构化引用，不能靠只删清单或只追加条目纠错。'
             prompt+='\n固定计划阶段协议优先：只完成本阶段，不规划/分派/验收其他任务。files必须是以约定文件名为键、原生JSON对象为值的对象，不是数组，不是JSON字符串；平台负责序列化。不要输出result交付说明或执行控制字段。审校的reviewed_artifact_ids填写inputs中实际最新交付ID。审校问题issues可用对象明确node_key（从plan_nodes选择实际负责该内容的上游节点）、文件、字段、问题及修正要求，平台将定向返工；不能靠重抄汇编稿修正上游专业错误。'
         for ch in inputs['children']:ch.pop('snapshot',None)
         if t['kind']=='leader':
@@ -90,31 +86,9 @@ class CrewAIExecutor:
                     self.service.db.event(c,t['project_id'],t['id'],'search_evidence_reused',
                         request_ids=[call['request_id'] for entry in reuse for call in entry['calls'] if call.get('request_id')],
                         summary='任务及依赖未变，复用本任务真实检索回执；保留原检索时间，不重复搜索或扣费')
-            if node and inputs.get('reference_contracts'):
-                from ..kernel.contracts import output_model
-                # A gate invalidates task.artifact_id, but its reviewed draft is
-                # immutable in artifact history. Give the editor that draft too.
-                if not node.get('gate'):
-                    with self.service.db.connect() as c:
-                        previous=c.execute('SELECT * FROM artifacts WHERE task_id=%s AND project_id=%s ORDER BY created DESC,id DESC LIMIT 1',(t['id'],t['project_id'])).fetchone()
-                    if previous:
-                        draft=self.service.artifacts.excerpts(dict(previous),limit=60000)
-                        if any(f.get('truncated') for f in draft['files']):raise ValueError('返工原稿超过上下文额度，拒绝仅凭截断内容重写')
-                        inputs['previous_delivery']=draft
-                        prompt+='\nprevious_delivery是本任务先前发布并被审校的原稿，不是已验收结论。返工须读取原稿并按task.description中的最新返工要求逐项修正，复核当前完整依赖；保留仍有证据支撑的正确内容、引用和局限，不能从头照抄上游分析破坏原稿已通过的引用结构。'
-                choices=selection_outputs(inputs['reference_contracts'])
-                if choices:
-                    selection=self.providers.agent_json(ctx,'先选择本阶段最终报告实际采用的引用来源，暂不写报告。读取完整依赖与原始需求，在每组数量上限内选择覆盖核心问题、风险、冲突与局限的原始编号；同页多语言和重复来源不应挤占必要主题。不能改编号、编造或合并来源。只输出约定的选择文件。',
-                        dict(phase='reference_selection',request=inputs.get('application',{}).get('input',{}),task=t['description'],messages=inputs['messages'],previous_delivery=inputs.get('previous_delivery'),reference_contracts=inputs['reference_contracts'],deliveries=inputs['deliveries']),output_model(dict(outputs=choices)))
-                    for i,contract in enumerate(inputs['reference_contracts']):
-                        name=f'reference-selection-{i}.json'
-                        if name in choices:
-                            contract['selected_ids']=selection['files'][name]['selected_ids']
-                            contract['selection_reason']=selection['files'][name]['reason']
             for correction in range(2):
                 if node:
-                    from ..kernel.contracts import output_model
-                    native=self.providers.agent_json(ctx,prompt,inputs,output_model(authoring_node(node,inputs.get('reference_contracts',[]))))
+                    native=self.providers.agent_json(ctx,prompt,inputs,output_model(node))
                     output=dict(summary=native.get('summary') or (node['staff']['role'] if node.get('staff') else snapshot['unit']['name']),files=[dict(path=path,content=dumps(value)) for path,value in native['files'].items()])
                 else:output=self.providers.agent_json(ctx,prompt,inputs,WorkOutput)
                 with self.service.db.tx() as c:
@@ -132,11 +106,6 @@ class CrewAIExecutor:
                         inputs['output_feedback']={'error':detail,
                             'instruction':('只修正本阶段stage_contract的文件和规则，返回原生files对象。复用当前证据与最新依赖文件，不重复检索，不重做其他阶段。' if node else '上次文件未通过应用交付校验，未发布。依据application.output_schema重新生成完整files；复用本次证据，不补造事实。文件content须为JSON原文，只做外层协议要求的一层转义。')}
                         rejected=native if node else output
-                        if node and inputs.get('reference_contracts'):
-                            previous=inputs['reference_contracts'];inputs['reference_contracts']=reference_contracts(node,ctx['deliveries'],rejected)
-                            for before,after in zip(previous,inputs['reference_contracts']):
-                                for key in ('selected_ids','selection_reason'):
-                                    if key in before:after[key]=before[key]
                         if len(dumps(rejected))<=64000:
                             inputs['output_feedback']['rejected_output']=rejected
                         continue

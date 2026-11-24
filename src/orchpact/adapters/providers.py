@@ -16,7 +16,6 @@ from ..credits import policy_snapshot, reservation_amount
 
 from ..search import profile_config, search_request, normalize, merge, public_url, quota_source, source_usage, SearchQuotaExceeded
 from ..json_protocol import decode
-from ..reference_feedback import contracts as reference_contracts, selection_outputs, authoring_node
 from ..provider_http import bounded_json, write_receipt
 
 class Providers:
@@ -109,8 +108,6 @@ class Providers:
         recovered=self.recover_json(ctx,system,context,schema)
         if recovered is not None:return recovered
         messages=[dict(role='system',content=system),dict(role='user',content=dumps(context))]
-        selected=[dict(file=c['file'],selected_ids=c['selected_ids'],max_items=c['max_items']) for c in context.get('reference_contracts',[]) if c.get('selected_ids')]
-        if selected:messages.append(dict(role='user',content='本次报告的引用集合已选定：'+dumps(selected)+'。只使用这些原始编号及其真实URL。逐段重新撰写并核对所有正文和结构化引用；未选来源的独有细节不得沿用或改挂其他编号，相关缺口须保留为待核实。最终sources完整列出使用的来源。'))
         attempt=ctx['task']['attempt_id'];directory=self.settings.data/'receipts'/attempt;directory.mkdir(parents=True,exist_ok=True)
         for index,tokens in enumerate((16000,24000),1):
             body=dict(model=profile['model'],messages=messages,response_format={'type':'json_object'},max_tokens=tokens,temperature=0)
@@ -152,9 +149,6 @@ class Providers:
                 (directory/(request+'-validation.json')).write_text(dumps(dict(error=detail,committed=False)))
                 if index==2:raise ValueError('两次生成未通过JSON协议校验；未提交动作：'+detail) from None
                 if len(raw)<=32000:messages.append(dict(role='assistant',content=raw))
-                if isinstance(decoded,dict) and context.get('stage_contract'):
-                    report_contracts=reference_contracts(context['stage_contract'],context.get('deliveries',[]),decoded)
-                    if report_contracts:messages.append(dict(role='user',content='同时修正所有引用约束，不得只处理当前第一条错误：'+dumps(report_contracts)))
                 messages.append(dict(role='user',content='草稿未提交。请按相同输入重新输出完整且简洁的JSON，保留事实与缺口，不补造数据。错误：'+detail))
         raise RuntimeError('unreachable')
 
@@ -181,7 +175,7 @@ class Providers:
                 receipt=loads(path.read_text());messages=receipt['messages']
                 if messages[0]!=dict(role='system',content=system):continue
                 previous=loads(messages[1]['content'])
-                keys=('goal','application','stage_contract','inputs','deliveries','evidence','output_feedback','agent_history','crew_member','crew_instruction','agent_tools')
+                keys=('goal','application','stage_contract','inputs','deliveries','repair_candidate','evidence','output_feedback','agent_history','crew_member','crew_instruction','agent_tools')
                 if any(previous.get(k)!=context.get(k) for k in keys):continue
                 # Retrying adds the platform's own rejection notice to the
                 # project conversation. It carries no new user instruction.

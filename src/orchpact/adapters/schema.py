@@ -422,6 +422,19 @@ SCHEMA += [
         UNIQUE(attempt_id,ordinal))""",
 ]
 
+DIRECT_WORKFLOW_SCHEMA = [
+    '''CREATE TABLE workflow_installations(
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+        workflow_id TEXT NOT NULL,
+        workflow_revision BIGINT NOT NULL,
+        scope_id TEXT NOT NULL REFERENCES applications(id),
+        revision BIGINT NOT NULL CHECK(revision>0),
+        bindings_digest TEXT NOT NULL,
+        PRIMARY KEY(workspace_id,workflow_id),
+        FOREIGN KEY(workflow_id,workflow_revision) REFERENCES workflow_versions(workflow_id,revision))''',
+]
+SCHEMA += DIRECT_WORKFLOW_SCHEMA
+
 MIGRATIONS = [
     ('0002_tool_runtime', [
         'ALTER TABLE projects ADD COLUMN tool_limit BIGINT NOT NULL DEFAULT 0',
@@ -453,4 +466,5 @@ MIGRATIONS = [
         'CREATE INDEX tool_invocation_recovery ON tool_invocations(status,provider_id)',
     ]),
     ('0003_verification_evidence', VERIFICATION_SCHEMA),
+    ('0004_direct_workflows', DIRECT_WORKFLOW_SCHEMA),
 ]

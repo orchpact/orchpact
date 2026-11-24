@@ -1,0 +1,157 @@
+{
+  "shipments": [
+    {
+      "shipment_id": "P1",
+      "order_id": "O1",
+      "warehouse_id": "E",
+      "sku": "A",
+      "quantity": 6,
+      "ship_day": 1,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P2",
+      "order_id": "O1",
+      "warehouse_id": "E",
+      "sku": "B",
+      "quantity": 2,
+      "ship_day": 1,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P3",
+      "order_id": "O2",
+      "warehouse_id": "N",
+      "sku": "C",
+      "quantity": 4,
+      "ship_day": 1,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P4",
+      "order_id": "O2",
+      "warehouse_id": "N",
+      "sku": "A",
+      "quantity": 2,
+      "ship_day": 1,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P5",
+      "order_id": "O3",
+      "warehouse_id": "S",
+      "sku": "B",
+      "quantity": 4,
+      "ship_day": 2,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P6",
+      "order_id": "O3",
+      "warehouse_id": "S",
+      "sku": "C",
+      "quantity": 2,
+      "ship_day": 2,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P7",
+      "order_id": "O4",
+      "warehouse_id": "E",
+      "sku": "A",
+      "quantity": 4,
+      "ship_day": 2,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P8",
+      "order_id": "O4",
+      "warehouse_id": "E",
+      "sku": "C",
+      "quantity": 2,
+      "ship_day": 2,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P9",
+      "order_id": "O6",
+      "warehouse_id": "S",
+      "sku": "A",
+      "quantity": 2,
+      "ship_day": 2,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P10",
+      "order_id": "O5",
+      "warehouse_id": "N",
+      "sku": "B",
+      "quantity": 4,
+      "ship_day": 3,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P11",
+      "order_id": "O5",
+      "warehouse_id": "N",
+      "sku": "C",
+      "quantity": 2,
+      "ship_day": 3,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P12",
+      "order_id": "O6",
+      "warehouse_id": "S",
+      "sku": "A",
+      "quantity": 3,
+      "ship_day": 3,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P13",
+      "order_id": "O6",
+      "warehouse_id": "S",
+      "sku": "B",
+      "quantity": 3,
+      "ship_day": 3,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P14",
+      "order_id": "O7",
+      "warehouse_id": "E",
+      "sku": "B",
+      "quantity": 4,
+      "ship_day": 4,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P15",
+      "order_id": "O7",
+      "warehouse_id": "E",
+      "sku": "A",
+      "quantity": 2,
+      "ship_day": 4,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P16",
+      "order_id": "O8",
+      "warehouse_id": "N",
+      "sku": "A",
+      "quantity": 3,
+      "ship_day": 4,
+      "carrier": "standard"
+    },
+    {
+      "shipment_id": "P17",
+      "order_id": "O8",
+      "warehouse_id": "N",
+      "sku": "C",
+      "quantity": 1,
+      "ship_day": 4,
+      "carrier": "standard"
+    }
+  ]
+}

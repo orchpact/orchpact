@@ -9,7 +9,7 @@
  function items(state){
   const result=[];
   for(const project of state.projects||[]){
-   const add=(kind,reference,reason,action)=>result.push({kind,label:labels[kind],project_id:project.id,application_id:project.application_id,operation:project.operation,reference,reason,action});
+   const add=(kind,reference,reason,action)=>result.push({kind,label:labels[kind],project_id:project.id,application_id:project.application_id,workflow_id:project.workflow?.id,operation:project.operation,reference,reason,action});
    for(const request of project.requests||[]){
     if(request.status==='unknown')add('receipt',request.id,'外部调用结果尚未确认；已核定费用也不代表获得了执行结果。','先核对真实回执；不要自动重发。');
     else if(request.status!=='started'&&request.accounting?.state==='held')add('accounting',request.id,'请求已停止，但积分仍在预留；Token 用量与费用核定分别记录。','查看回执，并由管理员在账号与积分中核定。');

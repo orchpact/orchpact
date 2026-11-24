@@ -8,7 +8,6 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from orchpact.kernel.workflows import validate_definition, export_definition, definition_digest
-from orchpact.interfaces.surface import product_path
 from orchpact.cli import main
 from runtime_fixtures import KernelFixture, package
 
@@ -154,8 +153,7 @@ class WorkflowTests(KernelFixture):
         from orchpact.kernel.errors import NotFound
         with self.assertRaises(NotFound):self.s.workflow_definition(actor,'fixture')
         with self.assertRaises(NotFound):self.s.preview_package(actor,'fixture',{'models':{'reasoning':'text'}})
-        for path in ('/api/v1/workflows','/api/v1/workflows/validate','/api/v1/apps/fixture/preview','/api/v1/apps/fixture/definition'):
-            self.assertFalse(product_path('fixture',path,'POST'));self.assertFalse(product_path('fixture',path,'GET'))
+
 
     def test_independent_people_install_and_execute_without_catalog_admin_rights(self):
         from fastapi.testclient import TestClient

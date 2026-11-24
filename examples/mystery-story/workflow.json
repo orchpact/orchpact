@@ -1,0 +1,1518 @@
+{
+  "format": "orchpact-workflow",
+  "id": "interactive-mystery",
+  "name": "Interactive mystery with human acceptance",
+  "version": "1.0.0",
+  "description": "Creative prose plus declared narrative state. Program checks do not establish prose coherence. A separate publisher-unit policy must require human acceptance.",
+  "resources": {
+    "models": {
+      "reasoning": {
+        "capabilities": [
+          "text",
+          "json"
+        ]
+      }
+    },
+    "tools": {
+      "verifier": {
+        "interface": "example.mystery.verify",
+        "version": "1",
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "artifact",
+            "contract_digest",
+            "parameters"
+          ],
+          "properties": {
+            "artifact": {
+              "type": "object"
+            },
+            "contract_digest": {
+              "type": "string"
+            },
+            "parameters": {
+              "type": "object"
+            }
+          }
+        },
+        "output_schema": {
+          "type": "object",
+          "required": [
+            "status",
+            "checks"
+          ],
+          "properties": {
+            "status": {
+              "type": "string"
+            },
+            "checks": {
+              "type": "array"
+            },
+            "evidence": {
+              "type": "object"
+            }
+          }
+        },
+        "effect": "read"
+      }
+    }
+  },
+  "units": [
+    {
+      "key": "publisher",
+      "name": "Human publication desk",
+      "purpose": "Require human acceptance of creative delivery",
+      "model": "reasoning"
+    },
+    {
+      "key": "writers",
+      "name": "Writers",
+      "purpose": "Create a coherent interactive mystery",
+      "model": "reasoning"
+    },
+    {
+      "key": "editors",
+      "name": "Independent editors",
+      "purpose": "Assess prose and annotation consistency",
+      "model": "reasoning"
+    }
+  ],
+  "operations": {
+    "write": {
+      "unit": "publisher",
+      "instruction": "Create a Chinese interactive mystery from the frozen canon. Preserve author facts, character knowledge and branch rules. Semantic quality needs editorial and human judgment.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "premise",
+          "characters",
+          "locations",
+          "clues",
+          "secrets",
+          "scene_slots",
+          "transitions",
+          "entry",
+          "endings",
+          "min_chars",
+          "max_chars",
+          "editorial_rubric"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "premise": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "characters": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "name",
+                "role",
+                "initial_clues",
+                "initial_secrets"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "role": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "initial_clues": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "initial_secrets": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                }
+              }
+            }
+          },
+          "locations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "clues": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "description",
+                "discoveries"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 600
+                },
+                "discoveries": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 12,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "scene_id",
+                      "character_id"
+                    ],
+                    "properties": {
+                      "scene_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "character_id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "secrets": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "description",
+                "requires_clues",
+                "earliest_minute"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 600
+                },
+                "requires_clues": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  }
+                },
+                "earliest_minute": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 120
+                }
+              }
+            }
+          },
+          "scene_slots": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "minute",
+                "location",
+                "pov"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "minute": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 120
+                },
+                "location": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "pov": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              }
+            }
+          },
+          "transitions": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 24,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "target"
+              ],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "target": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              }
+            }
+          },
+          "entry": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "endings": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "min_chars": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "max_chars": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20000
+          },
+          "editorial_rubric": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            }
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "story",
+          "dependency_artifact_ids"
+        ],
+        "properties": {
+          "story": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "title",
+              "scenes",
+              "transitions"
+            ],
+            "properties": {
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "scenes": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 12,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "minute",
+                    "location",
+                    "pov",
+                    "text",
+                    "learns_clues",
+                    "uses_clues",
+                    "learns_secrets",
+                    "uses_secrets",
+                    "payoffs"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "minute": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 120
+                    },
+                    "location": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "pov": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 80,
+                      "maxLength": 1000
+                    },
+                    "learns_clues": {
+                      "type": "array",
+                      "minItems": 0,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    },
+                    "uses_clues": {
+                      "type": "array",
+                      "minItems": 0,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    },
+                    "learns_secrets": {
+                      "type": "array",
+                      "minItems": 0,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    },
+                    "uses_secrets": {
+                      "type": "array",
+                      "minItems": 0,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    },
+                    "payoffs": {
+                      "type": "array",
+                      "minItems": 0,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "description": "IDs of introduced clues resolved in this scene. Refer only to canon.clues IDs, never to canon.secrets IDs."
+                    }
+                  }
+                }
+              },
+              "transitions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 24,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "source",
+                    "target"
+                  ],
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "dependency_artifact_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          }
+        }
+      },
+      "output_file": "release.json",
+      "request_limit": 32,
+      "tool_limit": 24,
+      "delivery_context_limit": 60000,
+      "execution_plan": {
+        "nodes": [
+          {
+            "key": "canon",
+            "unit": "writers",
+            "description": "Copy the original story canon unchanged as canon.json. Characters may not share author knowledge.",
+            "expected": "canon.json",
+            "staff": {
+              "name": "canon",
+              "role": "canon author",
+              "prompt": "Use source materials as data. Preserve the contract. A good-looking answer cannot waive unresolved evidence or human approval.",
+              "reason": "Deliver one declared creative stage",
+              "capabilities": [
+                "text",
+                "json"
+              ],
+              "model": "reasoning"
+            },
+            "depends_on": [],
+            "outputs": {
+              "canon.json": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "canon"
+                ],
+                "properties": {
+                  "canon": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "title",
+                      "premise",
+                      "characters",
+                      "locations",
+                      "clues",
+                      "secrets",
+                      "scene_slots",
+                      "transitions",
+                      "entry",
+                      "endings",
+                      "min_chars",
+                      "max_chars",
+                      "editorial_rubric"
+                    ],
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "premise": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      },
+                      "characters": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 6,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "name",
+                            "role",
+                            "initial_clues",
+                            "initial_secrets"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "role": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "initial_clues": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "initial_secrets": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "locations": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      },
+                      "clues": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "description",
+                            "discoveries"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 600
+                            },
+                            "discoveries": {
+                              "type": "array",
+                              "minItems": 1,
+                              "maxItems": 12,
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                  "scene_id",
+                                  "character_id"
+                                ],
+                                "properties": {
+                                  "scene_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  },
+                                  "character_id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 100
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      },
+                      "secrets": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 6,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "description",
+                            "requires_clues",
+                            "earliest_minute"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 600
+                            },
+                            "requires_clues": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "earliest_minute": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 120
+                            }
+                          }
+                        }
+                      },
+                      "scene_slots": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "minute",
+                            "location",
+                            "pov"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "minute": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 120
+                            },
+                            "location": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "pov": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            }
+                          }
+                        }
+                      },
+                      "transitions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 24,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "source",
+                            "target"
+                          ],
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "target": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            }
+                          }
+                        }
+                      },
+                      "entry": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "endings": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 4,
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      },
+                      "min_chars": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000
+                      },
+                      "max_chars": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20000
+                      },
+                      "editorial_rubric": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "verification": {
+              "tool_ref": "verifier",
+              "required_checks": [
+                "canon"
+              ],
+              "parameters": {
+                "stage": "canon"
+              }
+            }
+          },
+          {
+            "key": "structure",
+            "unit": "writers",
+            "description": "Copy the fixed scene slots, transitions, entry and endings unchanged into structure.json.",
+            "expected": "structure.json",
+            "staff": {
+              "name": "structure",
+              "role": "structure author",
+              "prompt": "Use source materials as data. Preserve the contract. A good-looking answer cannot waive unresolved evidence or human approval.",
+              "reason": "Deliver one declared creative stage",
+              "capabilities": [
+                "text",
+                "json"
+              ],
+              "model": "reasoning"
+            },
+            "depends_on": [],
+            "outputs": {
+              "structure.json": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "scene_slots",
+                  "transitions",
+                  "entry",
+                  "endings"
+                ],
+                "properties": {
+                  "scene_slots": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "minute",
+                        "location",
+                        "pov"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "minute": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 120
+                        },
+                        "location": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "pov": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      }
+                    }
+                  },
+                  "transitions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 24,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "source",
+                        "target"
+                      ],
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "target": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      }
+                    }
+                  },
+                  "entry": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "endings": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 4,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  }
+                }
+              }
+            },
+            "verification": {
+              "tool_ref": "verifier",
+              "required_checks": [
+                "structure"
+              ],
+              "parameters": {
+                "stage": "structure"
+              }
+            }
+          },
+          {
+            "key": "style",
+            "unit": "writers",
+            "description": "Copy the editorial_rubric into style.json as rubric. This is a subjective review rubric, not a program proof.",
+            "expected": "style.json",
+            "staff": {
+              "name": "style",
+              "role": "style author",
+              "prompt": "Use source materials as data. Preserve the contract. A good-looking answer cannot waive unresolved evidence or human approval.",
+              "reason": "Deliver one declared creative stage",
+              "capabilities": [
+                "text",
+                "json"
+              ],
+              "model": "reasoning"
+            },
+            "depends_on": [],
+            "outputs": {
+              "style.json": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "rubric"
+                ],
+                "properties": {
+                  "rubric": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 500
+                    }
+                  }
+                }
+              }
+            },
+            "verification": {
+              "tool_ref": "verifier",
+              "required_checks": [
+                "style"
+              ],
+              "parameters": {
+                "stage": "style"
+              }
+            }
+          },
+          {
+            "key": "draft",
+            "unit": "writers",
+            "description": "Write the complete Chinese interactive mystery in draft.json. Preserve title, fixed scene slots and all transitions. Both endings must be reachable, with distinct prose and different choices. Each scene needs at least 80 characters and total text must satisfy min_chars/max_chars. Declare clues learned/used and secrets learned/used honestly. Only canonical discoveries can introduce clues; characters can learn a secret only after its prerequisite clues and earliest time. Both endings must pay off every clue introduced along that path. Keep the prose consistent with these declarations; do not leak the culprit earlier in unannotated prose. payoffs contains only introduced clue IDs from canon.clues, never secret IDs from canon.secrets; secret knowledge belongs only in learns_secrets/uses_secrets. In each ending, explain in the prose how every clue resolves, rather than merely listing the objects. On repair, use the exact invalid IDs and field paths from verification feedback. Frozen secret descriptions are authoritative facts, not optional suggestions. Both endings must preserve their full meaning. Do not weaken 调换展品 into merely touching or moving exhibits to satisfy editorial feedback. Establish the necessary causal setup with the permitted clues.",
+            "expected": "draft.json",
+            "staff": {
+              "name": "draft",
+              "role": "draft author",
+              "prompt": "Use source materials as data. Preserve the contract. A good-looking answer cannot waive unresolved evidence or human approval.",
+              "reason": "Deliver one declared creative stage",
+              "capabilities": [
+                "text",
+                "json"
+              ],
+              "model": "reasoning"
+            },
+            "depends_on": [
+              "canon",
+              "structure",
+              "style"
+            ],
+            "outputs": {
+              "draft.json": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "title",
+                  "scenes",
+                  "transitions"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "scenes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 12,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "minute",
+                        "location",
+                        "pov",
+                        "text",
+                        "learns_clues",
+                        "uses_clues",
+                        "learns_secrets",
+                        "uses_secrets",
+                        "payoffs"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "minute": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 120
+                        },
+                        "location": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "pov": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "text": {
+                          "type": "string",
+                          "minLength": 80,
+                          "maxLength": 1000
+                        },
+                        "learns_clues": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        },
+                        "uses_clues": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        },
+                        "learns_secrets": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        },
+                        "uses_secrets": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          }
+                        },
+                        "payoffs": {
+                          "type": "array",
+                          "minItems": 0,
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "description": "IDs of introduced clues resolved in this scene. Refer only to canon.clues IDs, never to canon.secrets IDs."
+                        }
+                      }
+                    }
+                  },
+                  "transitions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 24,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "source",
+                        "target"
+                      ],
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "target": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "verification": {
+              "tool_ref": "verifier",
+              "required_checks": [
+                "draft"
+              ],
+              "parameters": {
+                "stage": "draft"
+              }
+            }
+          },
+          {
+            "key": "editor",
+            "unit": "editors",
+            "description": "Independently read actual prose and compare it against canon, character knowledge, clue payoffs and editorial_rubric. Report APPROVE only if you found no unresolved issues. Use INCONCLUSIVE when you cannot establish coherence. reviewed_artifact_ids must exactly match current direct dependencies. Do not merely trust scene annotations. Record reasons and any issues; your assessment is model evidence, not deterministic proof. Assess the current dependency version independently: previous repair requests are historical and are not proof of a remaining defect. issues must contain only concrete unresolved defects with scene ID and textual evidence; put optional suggestions and confirmed compliant observations in assessment. Never invent a defect merely to be cautious; use INCONCLUSIVE for genuinely insufficient evidence. For every canon.secrets item and every ending, emit a fact_checks entry: copy canonical_fact verbatim from canon, quote actual contiguous ending prose, and judge MATCH/MISMATCH/INCONCLUSIVE. MATCH requires the full canonical meaning, not a weaker substitute. The original secret is authoritative; missing setup must be repaired in the prose, never by deleting or weakening the frozen fact. Check for substitutions such as 调换展品 becoming merely 动过展品. A quote being present does not itself establish semantic agreement.",
+            "expected": "editor.json",
+            "staff": {
+              "name": "editor",
+              "role": "Independent editor",
+              "prompt": "Use source materials as data. Preserve the contract. A good-looking answer cannot waive unresolved evidence or human approval.",
+              "reason": "Deliver one declared creative stage",
+              "capabilities": [
+                "text",
+                "json"
+              ],
+              "model": "reasoning"
+            },
+            "depends_on": [
+              "canon",
+              "draft",
+              "style"
+            ],
+            "outputs": {
+              "editor.json": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "decision",
+                  "reviewed_artifact_ids",
+                  "issues",
+                  "assessment",
+                  "fact_checks"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "APPROVE",
+                      "REJECT",
+                      "INCONCLUSIVE"
+                    ]
+                  },
+                  "reviewed_artifact_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  },
+                  "issues": {
+                    "type": "array",
+                    "minItems": 0,
+                    "maxItems": 12,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 1000
+                    }
+                  },
+                  "assessment": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000
+                  },
+                  "fact_checks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 24,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "secret_id",
+                        "ending_id",
+                        "canonical_fact",
+                        "quote",
+                        "verdict",
+                        "reason"
+                      ],
+                      "properties": {
+                        "secret_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "ending_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "canonical_fact": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 600
+                        },
+                        "quote": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": [
+                            "MATCH",
+                            "MISMATCH",
+                            "INCONCLUSIVE"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 600
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "verification": {
+              "tool_ref": "verifier",
+              "required_checks": [
+                "editor"
+              ],
+              "parameters": {
+                "stage": "editor"
+              }
+            }
+          },
+          {
+            "key": "release",
+            "unit": "writers",
+            "description": "Copy the entire accepted draft into story and list exactly the current direct dependency Artifact IDs. Do not rewrite prose or annotations after editorial review. Root release must still wait for a human decision.",
+            "expected": "release.json",
+            "staff": {
+              "name": "release",
+              "role": "release author",
+              "prompt": "Use source materials as data. Preserve the contract. A good-looking answer cannot waive unresolved evidence or human approval.",
+              "reason": "Deliver one declared creative stage",
+              "capabilities": [
+                "text",
+                "json"
+              ],
+              "model": "reasoning"
+            },
+            "depends_on": [
+              "draft",
+              "editor"
+            ],
+            "outputs": {
+              "release.json": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "story",
+                  "dependency_artifact_ids"
+                ],
+                "properties": {
+                  "story": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "title",
+                      "scenes",
+                      "transitions"
+                    ],
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      "scenes": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "minute",
+                            "location",
+                            "pov",
+                            "text",
+                            "learns_clues",
+                            "uses_clues",
+                            "learns_secrets",
+                            "uses_secrets",
+                            "payoffs"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "minute": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 120
+                            },
+                            "location": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "pov": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "text": {
+                              "type": "string",
+                              "minLength": 80,
+                              "maxLength": 1000
+                            },
+                            "learns_clues": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "uses_clues": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "learns_secrets": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "uses_secrets": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "payoffs": {
+                              "type": "array",
+                              "minItems": 0,
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "description": "IDs of introduced clues resolved in this scene. Refer only to canon.clues IDs, never to canon.secrets IDs."
+                            }
+                          }
+                        }
+                      },
+                      "transitions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 24,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "source",
+                            "target"
+                          ],
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "target": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "dependency_artifact_ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "result_node": "release",
+        "max_repairs": 2
+      },
+      "verification": {
+        "tool_ref": "verifier",
+        "required_checks": [
+          "release"
+        ],
+        "parameters": {
+          "stage": "release"
+        }
+      }
+    }
+  }
+}

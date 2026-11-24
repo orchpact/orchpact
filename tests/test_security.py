@@ -1,17 +1,14 @@
-"""HTTP, tenancy and signed application regressions for the fresh control plane."""
+"""HTTP, tenancy and legacy signed-scope restrictions."""
 from dataclasses import replace
 import json
 import time
 from pathlib import Path
 import tempfile
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives import serialization
 from filelock import FileLock
 from fastapi.testclient import TestClient
 
 from orchpact.adapters.database import ident, now, dumps
 from orchpact.adapters.identity import Principal, principal
-from orchpact.application_signing import SigningCredentials
 from orchpact.bootstrap import Instance
 from orchpact.kernel.errors import Forbidden
 from runtime_fixtures import KernelFixture, package, TOKEN
@@ -79,48 +76,9 @@ class SecurityTests(KernelFixture):
         with self.s.db.tx() as c:c.execute('DELETE FROM workspace_members WHERE workspace_id=%s AND user_id=%s',(self.workspace,user))
         self.assertEqual(self.client.get('/api/v1/apps/fixture/runs/'+run['id'],headers={'X-Workspace-Id':self.workspace}).status_code,404)
 
-    def signed_setup(self):
+    def test_unsigned_user_cannot_bypass_required_signature(self):
         value=package();value['require_signature']=True;self.register(value)
         user,workspace,token=self.new_user()
-        private=Ed25519PrivateKey.generate()
-        public=private.public_key().public_bytes(serialization.Encoding.PEM,serialization.PublicFormat.SubjectPublicKeyInfo).decode()
-        response=self.client.post('/api/v1/apps/fixture/keys',json=dict(label='fixture key',public_key=public,user_id=user,workspace_id=workspace,user_session=True))
-        self.assertEqual(response.status_code,201,response.text)
-        return user,workspace,token,SigningCredentials('fixture',response.json()['id'],private)
-
-    def signed(self, credentials, token, workspace, path='/api/v1/apps/fixture/runs', body=None):
-        raw=dumps(body or dict(operation='generate',input={})).encode()
-        headers=credentials.headers('POST',path,'testserver',raw,'signed-fixture',session=token,workspace=workspace)
-        headers.update({'Content-Type':'application/json','Idempotency-Key':'signed-fixture'})
-        self.client.headers.pop('Authorization',None)
-        return raw,headers
-
-    def test_signed_delegation_binds_personal_payer(self):
-        user,workspace,token,key=self.signed_setup();raw,headers=self.signed(key,token,workspace)
-        response=self.client.post('/api/v1/apps/fixture/runs',content=raw,headers=headers)
-        self.assertEqual(response.status_code,201,response.text)
-        self.assertEqual(response.json()['payer_user_id'],user)
-        self.assertEqual(self.client.post('/api/v1/apps/fixture/runs',content=raw,headers=headers).status_code,401)
-        raw,headers=self.signed(key,token,workspace)
-        replay=self.client.post('/api/v1/apps/fixture/runs',content=raw,headers=headers)
-        self.assertEqual(replay.json()['id'],response.json()['id'])
-
-    def test_signed_request_tampering_or_revocation_rejected(self):
-        user,workspace,token,key=self.signed_setup();raw,headers=self.signed(key,token,workspace)
-        self.assertEqual(self.client.post('/api/v1/apps/fixture/runs',content=raw+b' ',headers=headers).status_code,401)
-        with self.s.db.tx() as c:c.execute('UPDATE application_keys SET revoked=%s WHERE id=%s',(now(),key.key_id))
-        raw,headers=self.signed(key,token,workspace)
-        self.assertEqual(self.client.post('/api/v1/apps/fixture/runs',content=raw,headers=headers).status_code,401)
-
-    def test_signed_identity_cannot_override_workspace_or_bearer(self):
-        user,workspace,token,key=self.signed_setup();raw,headers=self.signed(key,token,workspace)
-        headers['X-Workspace-Id']=self.workspace
-        self.assertEqual(self.client.post('/api/v1/apps/fixture/runs',content=raw,headers=headers).status_code,400)
-        raw,headers=self.signed(key,token,workspace);headers['Authorization']='Bearer '+TOKEN
-        self.assertEqual(self.client.post('/api/v1/apps/fixture/runs',content=raw,headers=headers).status_code,400)
-
-    def test_unsigned_user_cannot_bypass_required_signature(self):
-        user,workspace,token,key=self.signed_setup()
         self.client.headers['Authorization']='Bearer '+token
         self.assertEqual(self.client.post('/api/v1/apps/fixture/runs',json=dict(operation='generate',input={}),headers={'Idempotency-Key':'unsigned'}).status_code,403)
 

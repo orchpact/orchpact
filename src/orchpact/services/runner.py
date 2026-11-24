@@ -24,10 +24,15 @@ class Runner:
         providers = getattr(self.executor, 'providers', None)
         if providers:
             providers.recover_receipts()
+        # Finalizing a recovered child can publish a new root candidate.
+        with self.service.db.connect() as c:
+            interrupted_attempts = [row['id'] for row in c.execute("SELECT id FROM attempts WHERE status='running'")]
         self.service.verifications.recover()
         with self.service.db.tx() as c:
-            c.execute("UPDATE attempts SET status='interrupted',finished=%s WHERE status='running'", (now(),))
-            c.execute("UPDATE tasks SET status='interrupted',error='执行中断，请先核对真实回执再明确重试' WHERE status='running'")
+            c.execute("UPDATE attempts SET status='interrupted',finished=%s WHERE status='running' AND id=ANY(%s)",
+                      (now(), interrupted_attempts))
+            c.execute("""UPDATE tasks SET status='interrupted',error='执行中断，请先核对真实回执再明确重试'
+                      WHERE status='running' AND attempt_id=ANY(%s)""", (interrupted_attempts,))
             c.execute("UPDATE requests SET status='unknown' WHERE status='started'")
             for row in c.execute("SELECT id FROM requests WHERE kind='search' AND status='unknown'").fetchall():
                 self.service.access.wallets.settle(c, row['id'])
@@ -48,7 +53,6 @@ class Runner:
             return False
         try:
             self.executor.execute(ctx)
-            self.service.verifications.step()
         except Exception as exc:
             # Public errors carry types/validation only, never transport bodies or credentials.
             error = str(exc) if isinstance(exc, (ValueError, KeyError)) else type(exc).__name__
@@ -56,6 +60,8 @@ class Runner:
                 self.service.fail(ctx['execution_context'], ctx['task']['id'], ctx['task']['attempt_id'], error)
             except ValueError:
                 pass
+        else:
+            self.service.verifications.step()
         return True
 
     def start(self):

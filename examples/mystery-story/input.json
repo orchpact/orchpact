@@ -1,0 +1,157 @@
+{
+  "title": "闭馆后的第七声钟响",
+  "premise": "暴雨让三个人困在旧馆。钟声与录音互相矛盾，调查员必须在天亮前决定怎样处理真相。",
+  "characters": [
+    {
+      "id": "lin",
+      "name": "林澈",
+      "role": "调查员",
+      "initial_clues": [],
+      "initial_secrets": []
+    },
+    {
+      "id": "shen",
+      "name": "沈禾",
+      "role": "守夜人",
+      "initial_clues": [],
+      "initial_secrets": []
+    },
+    {
+      "id": "zhou",
+      "name": "周馆长",
+      "role": "馆长",
+      "initial_clues": [],
+      "initial_secrets": [
+        "K1"
+      ]
+    }
+  ],
+  "locations": [
+    "大厅",
+    "档案室",
+    "放映室"
+  ],
+  "clues": [
+    {
+      "id": "C1",
+      "description": "停在十九点十分的机械钟",
+      "discoveries": [
+        {
+          "scene_id": "S1",
+          "character_id": "lin"
+        }
+      ]
+    },
+    {
+      "id": "C2",
+      "description": "被改过时间的借阅登记",
+      "discoveries": [
+        {
+          "scene_id": "S2",
+          "character_id": "lin"
+        }
+      ]
+    },
+    {
+      "id": "C3",
+      "description": "录音带上不自然的拼接缝",
+      "discoveries": [
+        {
+          "scene_id": "S3",
+          "character_id": "shen"
+        },
+        {
+          "scene_id": "S4",
+          "character_id": "lin"
+        }
+      ]
+    }
+  ],
+  "secrets": [
+    {
+      "id": "K1",
+      "description": "周馆长拼接录音掩盖调换展品的时间",
+      "requires_clues": [
+        "C2",
+        "C3"
+      ],
+      "earliest_minute": 40
+    }
+  ],
+  "scene_slots": [
+    {
+      "id": "S1",
+      "minute": 0,
+      "location": "大厅",
+      "pov": "lin"
+    },
+    {
+      "id": "S2",
+      "minute": 10,
+      "location": "档案室",
+      "pov": "lin"
+    },
+    {
+      "id": "S3",
+      "minute": 20,
+      "location": "放映室",
+      "pov": "shen"
+    },
+    {
+      "id": "S4",
+      "minute": 30,
+      "location": "大厅",
+      "pov": "lin"
+    },
+    {
+      "id": "E1",
+      "minute": 50,
+      "location": "大厅",
+      "pov": "lin"
+    },
+    {
+      "id": "E2",
+      "minute": 50,
+      "location": "大厅",
+      "pov": "lin"
+    }
+  ],
+  "transitions": [
+    {
+      "source": "S1",
+      "target": "S2"
+    },
+    {
+      "source": "S2",
+      "target": "S3"
+    },
+    {
+      "source": "S3",
+      "target": "S4"
+    },
+    {
+      "source": "S4",
+      "target": "E1"
+    },
+    {
+      "source": "S4",
+      "target": "E2"
+    }
+  ],
+  "entry": "S1",
+  "endings": [
+    "E1",
+    "E2"
+  ],
+  "min_chars": 800,
+  "max_chars": 3500,
+  "editorial_rubric": [
+    "人物不能在获得线索前知道秘密",
+    "两个结局都应回应三条线索",
+    "双结局应体现不同价值选择",
+    "无超自然解释、无新增决定性物证",
+    "检查正文与结构化人物知情声明是否一致",
+    "E1选择公开真相并保全记录，E2选择保全证据暂缓公开；两个结局不能改变核心事实。",
+    "冻结事实 K1 中“调换展品”不能改写成仅仅移动、触碰或动过展品。两个结局必须保持该事实，编辑不得为避免铺垫问题而要求删除或弱化它。"
+  ]
+}

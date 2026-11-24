@@ -52,15 +52,15 @@ uv run orchpact workflow-check examples/workflows/department-review.json
 ```
 
 3. 在“工作流目录”登记这个 JSON，得到 `department-review` 的不可变修订。
-4. 在“应用绑定”创建 `analysis-app`，固定引用该工作流 ID 与明确修订。应用身份、公钥和工作流资产分别管理。
+4. 在工作流目录选择明确修订，点击“预览与安装资源”；无需创建子应用。
 5. 在当前 Workspace 预览安装，把 `reasoning` 槽位绑定到本空间支持 text/json 的模型，确认后安装。绑定内容为 `{"models":{"reasoning":"your-text-profile"}}`，其中模型标识使用你实际配置的值；绑定不写入定义。
-6. 按 [应用接入](APPLICATIONS.md)配置服务端签名身份，从该应用提交 `calculate` 操作：
+6. 在工作流目录点击“直接运行”，提交 `calculate` 操作，或调用 `POST /api/v1/workflows/department-review/runs`：
 
 ```json
 {"operation":"calculate","input":{"records":[{"id":"source-a","amount":3},{"id":"source-b","amount":5}]},"context":{}}
 ```
 
-实际执行会调用你配置的模型并消耗额度。应用私钥保留在应用服务端网关，管理凭据不进入网页。通过 Python 客户端登记、绑定和安装的命令见 [README](../README.md)；需要明确指定空间时传入 `--workspace`。
+实际执行会调用你配置的模型并消耗额度。管理凭据不进入网页。通过 Python 客户端登记和安装的命令见 [README](../README.md)；需要明确指定空间时传入 `--workspace`。
 
 ## 理解本次执行
 
@@ -72,19 +72,20 @@ uv run orchpact workflow-check examples/workflows/department-review.json
 
 成功时 `result.json` 的 `total` 应为 8，`source_ids` 包含 source-a、source-b，且当前产物通过审校。模型原始回答或单个 Crew 结束不能单独证明整个工作流成功。运行查询中的 `crew_runs` 应能关联两个团队，`agent_steps` 将模型/工具步骤关联到实际岗位；有界协议修正可能产生额外 Crew 启动记录，不能把 Crew 数量当作工作项数量。
 
-多个应用可以引用同一个定义；它们的签名身份、运行、文件和账务分别管理。发布新修订不移动应用引用，修改引用不升级空间安装；显式升级不改写已有执行。完整协议见 [工作流与绑定](WORKFLOWS.md)。
+多个 Workspace 可以安装同一个定义；各自的资源、运行、文件和预算保持隔离。发布不升级空间，显式安装升级不改写旧执行。完整协议见 [直接运行工作流](APPLICATIONS.md)。
 
 需要观察恢复行为时，区分三个结果：正常交付应有匹配当前产物的验收；返工应保留旧产物并产生新的代次与审校；外部请求结果未知应保留预留并等待真实回执，不自动重放请求。相关约束见 [架构](ARCHITECTURE.md)和 [执行边界](EXECUTION_BOUNDARY.md)。
 
-## 先验证机制，不调用真实模型
+## 先运行四种验收场景，不调用真实模型
 
 需要独立测试 PostgreSQL：安装本地二进制并配置 ORCHPACT_PG_BIN，或指定有 CREATEDB 权限的专用 ORCHPACT_TEST_DATABASE_URL；备份客户端通过 ORCHPACT_PG_DUMP 指定。不要指向业务库。
 
 ```sh
+uv run python examples/verified-delivery.py
 uv run python evals/verify_contracts.py --output /absolute/new/contracts.json
 uv run python scripts/smoke_release.py --output /absolute/new/smoke.json
 ```
 
-前者复现授权、验收、未知结果与幂等结算四类契约；后者在临时实例中走完真实 CLI、签名 HTTP、双应用执行和重启核验。它们使用真实隔离存储与合成供应商响应，不证明内容质量、真实检索或成本优势，也不会运行生成的业务代码。
+前者复现授权、验收、未知结果与幂等结算四类契约；后者在临时实例中走完真实 CLI、签名 HTTP、直接工作流执行和重启核验。它们使用真实隔离存储与合成供应商响应，不证明内容质量、真实检索或成本优势，也不会运行生成的业务代码。
 
 接下来阅读 [架构](ARCHITECTURE.md)、[公开接口](COMPATIBILITY.md)与[管理台](CONSOLE.md)。

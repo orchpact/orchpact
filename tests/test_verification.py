@@ -1,13 +1,53 @@
 """Trusted verification evidence and candidate acceptance recovery."""
+from concurrent.futures import ThreadPoolExecutor
+import json
+from threading import Event
 from unittest.mock import patch
 
-from orchpact.adapters.database import loads
+from orchpact.adapters.database import dumps, loads
 from orchpact.adapters.tools import ToolTransportError
 from orchpact.kernel.errors import DomainError
+from orchpact.services.tools import digest
 from verification_fixtures import VerificationFixture, verifier_result, workflow
 
 
 class VerificationTests(VerificationFixture):
+    def test_direct_workflow_tool_binding_requires_declared_workflow_scope(self):
+        value=workflow(node_verification=True)
+        self.s.workflows.register(self.ctx,value)
+        body=self.config()
+        for provider in body['value']['providers']:
+            if provider['category']=='tool':
+                provider['tool_policy']['application_ids']=[]
+                provider['tool_policy']['workflow_ids']=['different-workflow']
+        self.save_config(body)
+        response=self.client.post('/api/v1/workflows/fixture/install',json=dict(workflow_revision=1,expected_revision=0,bindings=self.bindings()))
+        self.assertEqual(response.status_code,409,response.text)
+        body=self.config()
+        for provider in body['value']['providers']:
+            if provider['category']=='tool':provider['tool_policy']['workflow_ids']=['fixture']
+        self.save_config(body)
+        self.client.post('/api/v1/workflows/fixture/install',json=dict(workflow_revision=1,expected_revision=0,bindings=self.bindings())).raise_for_status()
+        run=self.s.delivery.invoke(self.ctx,'fixture',dict(operation='generate',input={'value':7},context={}), 'direct-tool')
+        self.assertTrue(self.app.state.runner.step())
+        self.assertEqual(self.s.delivery.run(self.ctx,run['id'])['status'],'completed')
+
+    def test_nonfinal_verified_node_cannot_be_cancelled_or_weakened(self):
+        from copy import deepcopy
+        value=workflow(node_verification=True)
+        checked=value['operations']['generate']['execution_plan']['nodes'][0]
+        final=deepcopy(checked);checked['key']='checked'
+        final.pop('verification')
+        value['operations']['generate']['execution_plan']['nodes'].append(final)
+        self.install(value);run=self.invoke()
+        task=next(row for row in run['tasks'] if row['node_key']=='checked')
+        for index,change in enumerate((dict(cancel=True),dict(description='Skip required checks'))):
+            response=self.client.post('/api/v1/runs/'+run['id']+'/commands',json=dict(key='weaken-verifier-'+str(index),action='amend',payload=dict(reason='Alter checked step',changes=[dict(task_id=task['id'],**change)])))
+            self.assertEqual(response.status_code,409,response.text)
+            self.assertEqual(response.json()['code'],'acceptance_locked')
+        self.assertEqual(self.view(run)['revision'],1)
+        self.assertEqual(self.verifier.calls,0)
+
     def test_pass_binds_node_and_root_evidence_before_acceptance(self):
         value=workflow(node_verification=True,root_verification=True);self.install(value);run=self.invoke()
         self.assertTrue(self.app.state.runner.step());self.assertTrue(self.app.state.runner.step())
@@ -88,6 +128,159 @@ class VerificationTests(VerificationFixture):
         view=self.view(run)
         self.assertEqual(view['status'],'completed');self.assertEqual(self.verifier.calls,1)
         self.assertEqual(len(view['verification_evidence']),1)
+
+    def test_disabled_verifier_fails_candidate_and_scheduler_continues(self):
+        self.install(workflow(node_verification=True))
+        runner = self.app.state.runner
+        run = self.invoke('disabled-verifier')
+        other = self.invoke('later-work')
+        ctx = self.s.claim()
+        runner.executor.execute(ctx)
+        self.update_verifier(enabled=False)
+
+        self.assertTrue(runner.step())
+        view = self.view(run)
+        task = next(item for item in view['tasks'] if item['node_key']=='render')
+        self.assertEqual(task['status'], 'failed')
+        self.assertIn('provider_disabled', task['error'])
+        self.assertEqual(task['review'], 'pending')
+        self.assertEqual(view['verification_evidence'], [])
+        self.assertEqual([call['logical_tool'] for call in view['tool_invocations']], ['renderer'])
+        self.assertEqual(view['execution_plan']['repairs'], 0)
+        self.assertEqual(self.verifier.calls, 0)
+        with self.s.db.connect() as c:
+            self.assertEqual(self.s.row(c,'attempts',ctx['task']['attempt_id'])['status'],'failed')
+
+        self.update_verifier(enabled=True)
+        self.assertTrue(runner.step())
+        self.assertEqual(self.view(other)['status'], 'completed')
+        self.assertEqual(self.verifier.calls, 1)
+
+    def test_shutdown_before_verifier_leaves_candidate_for_recovery(self):
+        self.install(workflow(node_verification=True))
+        run = self.invoke()
+        runner = self.app.state.runner
+        invoke = self.s.tools.invoke
+
+        def stop_before_verifier(ctx, slot, *args, **kwargs):
+            if slot == 'verifier':
+                runner.stop_event.set()
+            return invoke(ctx, slot, *args, **kwargs)
+
+        with patch.object(self.s.tools, 'invoke', side_effect=stop_before_verifier):
+            self.assertTrue(runner.step())
+        view = self.view(run)
+        candidate = next(task for task in view['tasks'] if task['node_key'] == 'render')
+        self.assertEqual((candidate['status'], candidate['review']), ('running', 'pending'))
+        self.assertEqual(view['verification_evidence'], [])
+        self.assertEqual([call['logical_tool'] for call in view['tool_invocations']], ['renderer'])
+        self.assertEqual(self.verifier.calls, 0)
+
+        runner.recover()
+        candidate = next(task for task in self.view(run)['tasks'] if task['id'] == candidate['id'])
+        self.assertEqual(candidate['status'], 'interrupted')
+        self.assertEqual(self.verifier.calls, 0)
+
+    def test_recovery_skips_missing_receipt_and_preserves_new_root_candidate(self):
+        self.install(workflow(node_verification=True,root_verification=True))
+        runner = self.app.state.runner
+        first = self.invoke('first-without-receipt')
+        runner.executor.execute(self.s.claim())
+        later = self.invoke('later-with-receipt')
+        runner.executor.execute(self.s.claim())
+        candidates = self.s.verifications.candidates()
+        self.assertEqual([task['project_id'] for task in candidates], [first['id'],later['id']])
+        with patch.object(self.s.verifications,'record',side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.s.verifications.process(candidates[1])
+        self.assertEqual(self.verifier.calls, 1)
+        # Recovery must use the durable result even with the provider offline.
+        self.update_verifier(enabled=False)
+        with (
+            patch.object(self.s.tools, 'invoke', side_effect=AssertionError('recovery must only read receipts')),
+            patch.object(self.s.verifications, 'context', side_effect=AssertionError('recovery must skip execution context')),
+        ):
+            runner.recover()
+
+        first_view = self.view(first)
+        first_task = next(task for task in first_view['tasks'] if task['node_key']=='render')
+        self.assertEqual(first_task['status'], 'interrupted')
+        self.assertEqual(first_view['verification_evidence'], [])
+        later_view = self.view(later)
+        render = next(task for task in later_view['tasks'] if task['node_key']=='render')
+        root = next(task for task in later_view['tasks'] if task['id']==later['root_task_id'])
+        self.assertEqual((render['status'],render['review']), ('completed','accepted'))
+        self.assertEqual(root['status'], 'running')
+        self.assertEqual([item['status'] for item in later_view['verification_evidence']], ['PASS'])
+        self.assertEqual(self.verifier.calls, 1)
+
+        self.update_verifier(enabled=True)
+        self.assertTrue(runner.step())
+        self.assertEqual(self.view(later)['status'], 'completed')
+        self.assertEqual(self.verifier.calls, 2)
+
+    def test_recovery_skips_corrupt_receipt_and_finalizes_later_candidate(self):
+        self.install(workflow(node_verification=True))
+        runner = self.app.state.runner
+        first = self.invoke('corrupt-receipt')
+        runner.executor.execute(self.s.claim())
+        later = self.invoke('valid-receipt')
+        runner.executor.execute(self.s.claim())
+        candidates = self.s.verifications.candidates()
+        self.assertEqual([task['project_id'] for task in candidates], [first['id'], later['id']])
+        with patch.object(self.s.verifications, 'record', side_effect=KeyboardInterrupt):
+            for candidate in candidates:
+                with self.assertRaises(KeyboardInterrupt):
+                    self.s.verifications.process(candidate)
+
+        call = next(call for call in self.view(first)['tool_invocations'] if call['logical_tool'] == 'verifier')
+        receipt_path = self.settings.data / 'tool-invocations' / call['attempt_id'] / (call['id'] + '.json')
+        receipt = loads(receipt_path.read_text())
+        receipt_path.write_text(json.dumps(dict(receipt, result=float('nan'))))
+        self.assertFalse(self.s.verifications.process(candidates[0], replay_only=True))
+
+        # The file can be internally consistent while disagreeing with the committed digest.
+        receipt['result']['evidence']['summary'] = 'corrupted after commit'
+        receipt['result_digest'] = digest(receipt['result'])
+        receipt_path.write_text(dumps(receipt))
+        runner.recover()
+
+        first_view = self.view(first)
+        task = next(task for task in first_view['tasks'] if task['node_key'] == 'render')
+        self.assertEqual(task['status'], 'interrupted')
+        self.assertEqual(first_view['verification_evidence'], [])
+        later_view = self.view(later)
+        self.assertEqual(later_view['status'], 'completed')
+        self.assertEqual([item['status'] for item in later_view['verification_evidence']], ['PASS'])
+        self.assertEqual(self.verifier.calls, 2)
+
+    def test_workers_do_not_compete_for_the_same_verification_candidate(self):
+        self.install(workflow(node_verification=True))
+        run = self.invoke()
+        runner = self.app.state.runner
+        runner.executor.execute(self.s.claim())
+        started, release = Event(), Event()
+
+        def verify(_):
+            started.set()
+            if not release.wait(10):
+                raise TimeoutError('fixture did not release verifier')
+            return verifier_result()
+
+        self.verifier.result = verify
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            verifying = pool.submit(runner.step)
+            try:
+                self.assertTrue(started.wait(10))
+                self.assertFalse(runner.step())
+            finally:
+                release.set()
+            self.assertTrue(verifying.result(timeout=10))
+
+        view = self.view(run)
+        self.assertEqual(view['status'], 'completed')
+        self.assertEqual([item['status'] for item in view['verification_evidence']], ['PASS'])
+        self.assertEqual(self.verifier.calls, 1)
 
     def test_existing_evidence_recovers_before_interruption_without_replay(self):
         value=workflow(node_verification=True);self.install(value);run=self.invoke()

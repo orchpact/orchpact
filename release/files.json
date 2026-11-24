@@ -26,7 +26,6 @@
     "README.en.md",
     "CONTRIBUTING.md",
     "SECURITY.md",
-    "config/frontends.toml",
     "config/models.toml",
     "config/execution.toml",
     "config/credits.toml",

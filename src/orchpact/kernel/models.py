@@ -190,14 +190,3 @@ class GovernancePolicy(Strict):
 class TemplatePreviewInput(Strict):
     parameters: dict
     sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
-
-
-class WorkflowBinding(Strict):
-    name: str = Field(min_length=1,max_length=120)
-    workflow_id: str = Field(pattern=r'^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$')
-    workflow_revision: int = Field(ge=1)
-    expected_revision: int = Field(ge=0)
-    enabled: bool | None = None
-    require_signature: bool | None = None
-
-Key = Annotated[str, Field(pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$")]

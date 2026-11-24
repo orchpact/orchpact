@@ -11,7 +11,6 @@ Orchpact 的公开契约覆盖工作流声明、应用引用、空间安装与�
 | 可移植定义 | `orchpact workflow-check` 离线校验；完整行为见 [工作流协议](../docs/WORKFLOWS.md) |
 | 团队与岗位 | `units[].crew`、节点 `participants`；声明到运行对象的映射见 [团队设计](../docs/TEAM_EXECUTION.md) |
 | 资源安装 | 模型绑定选择本地 profile；工具绑定使用 `endpoint_ref + implementation_version` 选择可信 provider。槽位必须恰好覆盖，物理配置不能混入定义 |
-| 应用固定引用 | [application-binding.schema.json](application-binding.schema.json)，明确 workflow_id、workflow_revision 和 expected_revision |
 | 运行与交付 | [应用 API](../docs/APPLICATIONS.md)，包含权限、幂等、状态、文件与执行步骤元数据 |
 
 工作流作者 `version`、目录修订、应用绑定修订和 Workspace 安装修订分别管理。应用不使用隐式 latest；发布、改绑、安装和执行不自动串联。后续更新不改写已发布定义或已经保存的执行快照。

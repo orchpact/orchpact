@@ -38,7 +38,7 @@ class ToolRuntime:
     def _receipt(self, call):
         try:
             value = loads(self._path(call).read_text())
-        except (OSError,ValueError,TypeError):
+        except (OSError,ValueError,TypeError,RecursionError):
             return None
         if not isinstance(value,dict) or value.get('tool_call_id') != call['id'] or value.get('request_id') != call['request_id']:
             return None
@@ -46,8 +46,12 @@ class ToolRuntime:
             return None
         if value.get('status') not in ('completed','failed','unknown'):
             return None
-        if value.get('status') == 'completed' and value.get('result_digest') != digest(value.get('result')):
-            return None
+        if value['status'] == 'completed':
+            try:
+                if value.get('result_digest') != digest(value.get('result')):
+                    return None
+            except (ValueError, RecursionError):
+                return None
         return value
 
     def _write_receipt(self, call, status, result, error_code):
@@ -60,6 +64,13 @@ class ToolRuntime:
             error_code=error_code,created=now())
         write_receipt(path,value)
         return value
+
+    def read_completed_result(self, call):
+        receipt = self._receipt(call)
+        if (call['status'] != 'completed' or not receipt or receipt['status'] != 'completed'
+                or 'result' not in receipt or receipt['result_digest'] != call['result_digest']):
+            raise ToolCallError('result_receipt_missing', call['id'], 'unknown')
+        return receipt['result']
 
     @staticmethod
     def public(call, *, replay=False):
@@ -106,6 +117,9 @@ class ToolRuntime:
             raise Forbidden('工具未授权此 Workspace')
         if policy['application_ids'] and ctx['project']['application_id'] not in policy['application_ids']:
             raise Forbidden('工具未授权此应用')
+        workflow=ctx.get('application',{}).get('workflow_id')
+        if policy.get('workflow_ids') and workflow not in policy['workflow_ids']:
+            raise Forbidden('工具未授权此工作流')
         credential = self.service.configuration.secret(provider)
         if policy['require_credential'] and not credential:
             raise ToolCallError('credential_unavailable')
@@ -173,7 +187,7 @@ class ToolRuntime:
                 if old['status'] == 'completed':
                     receipt = self._receipt(old)
                     if not receipt:
-                        raise ToolCallError('result_receipt_missing',old['id'],'unknown')
+                        raise ToolCallError('result_receipt_missing', old['id'], 'unknown')
                     replay = self.public(old,replay=True)
                     replay['tool_call_id'] = replay.pop('id')
                     return dict(replay,result=receipt['result'])

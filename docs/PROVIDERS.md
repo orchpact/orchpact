@@ -18,7 +18,7 @@
 
 - `tool_interface` 与 `tool_interface_version`：必须匹配工作流逻辑声明；
 - `implementation_version`：安装绑定必须明确选择该版本，不使用 latest；
-- `tool_policy.workspace_ids` / `application_ids`：非空列表只允许列明范围，空列表表示不限制相应范围；
+- `tool_policy.workspace_ids` / `workflow_ids`（旧范围兼容 `application_ids`）：非空列表只允许列明范围，空列表表示不限制相应范围；
 - `tool_policy.require_credential`：为 true 时，未配置托管秘密的提供者不能绑定；
 - `tool_policy.max_concurrency`：同一 provider 的 started 调用上限，1–64；
 - `tool_policy.network`：`allowed_hosts`、`allowed_ports` 和 `allow_private`。原始 endpoint 主机总是需要逐次 DNS/IP 检查，重定向主机还必须在白名单中；私有地址默认拒绝。

@@ -5,13 +5,22 @@ Orchpact 以可自托管服务发行，Python wheel 是安装载体，集成客�
 ## 使用者可以依赖什么
 
 - `orchpact-workflow` JSON 定义及 `contracts/` 中的 Schema：职责、模型/工具能力槽位、输入输出、计划依赖、验收与有界返工。支持受控 Tool Runtime、CrewAI 动态工具调用、确定性 `kind=tool` 节点、独立 `artifact_outputs`、二进制 `output_kind=artifact` 根输出，以及管理员可信 Verifier 和不可变验证证据。旧定义省略新字段时保持原 JSON 行为与摘要。
-- [工作流接口](WORKFLOWS.md)和[应用接入](APPLICATIONS.md)记录的 HTTP 行为；签名协议、权限、幂等键和修订冲突属于契约。管理员固定模板目录与只读预览使用 `GET /workflow-templates` 和 `POST /workflow-templates/{template_id}/preview`，预览不发布或安装。完整路由以实例管理员可访问的 `/api/v1/openapi.json` 为准，管理路由不因此向产品身份开放。
-- `orchpact init/check/serve/workflow-check/component-expand/backup` 命令，以及 `orchpact.interfaces.client.configure` 和应用签名客户端的已记录调用方式。`component-expand` 是离线作者工具，固定本地组件版本与摘要并输出普通工作流和独立报告，不改变发布、绑定、安装或运行时协议。
+- [工作流接口](WORKFLOWS.md)和[应用接入](APPLICATIONS.md)记录的 HTTP 行为；平台会话、权限、幂等键和修订冲突属于契约。管理员固定模板目录与只读预览使用 `GET /workflow-templates` 和 `POST /workflow-templates/{template_id}/preview`，预览不发布或安装。完整路由以实例管理员可访问的 `/api/v1/openapi.json` 为准，管理路由不因此向产品身份开放。
+- `orchpact init/check/serve/workflow-check/component-expand/backup` 命令，以及 `orchpact.interfaces.client.configure` 的直接工作流登记/安装方式。`component-expand` 是离线作者工具，固定本地组件版本与摘要并输出普通工作流和独立报告，不改变发布、绑定、安装或运行时协议。
 - 独立 Docker/Compose 的实例配置方式、专用数据库与配套文件的停止备份恢复流程。
 
 CrewAI 运行对象、数据库表、内部 Python 模块、管理台 DOM、未记录的路由不承诺作为外部扩展 API。外部 Agent 适配、远程 Worker、多主调度和生成代码执行均不在首发范围。
 
 ## 版本与变更
+
+子应用管理已移除：绑定创建、公钥和 Ed25519 签名网关、产品域名与静态托管不再支持。CLI 的应用/网关参数已移除；非空 products/frontends 配置明确拒绝启动，需先移出旧配置。主流程改为 `/workflows/{id}/preview|install|runs` 与 `/runs/{id}`。原 `/apps/{id}` 执行/文档适配仅为历史兼容保留，不进入公开 OpenAPI。旧签名范围不会自动放宽给普通会话；平台原有会话仍可使用。
+
+新增 `0004_direct_workflows` 迁移，只增加安装索引，按统一迁移执行器先备份再升级，不删除历史表或数据。原应用外键继续作为内部存储范围；不得通过清库完成升级。工作流级幂等跨安装升级保持有效，显式安装仍需所有者/管理员。
+
+
+当前行为收紧：`amend` 仅供获授权用户使用，执行身份即使持有旧授权也被拒绝；用户不能移除声明的验收检查、其输入或汇总路径，不能改写验收描述/期望或删去相关依赖。变更验收契约应发布新定义并发起新执行。`organization-packages` 标记 deprecated，但保留现有登记/更新行为；新接入使用工作流目录与 Workspace 安装。
+
+报告专用的隐式选源调用、引用集合动态 Schema 和提供者提示词已移除。引用规则与冻结 Schema 保持有效，通用有界协议修正继续执行；需要选源的作者应采用 [显式流程](../examples/workflows/explicit-reference-report.json) 并发布新修订。此项会改变旧报告流程后续执行的提示词与调用数量，不改变历史产物、回执、已保存任务/定价快照，也不自动升级应用或安装。合成传输回归不证明新旧策略的真实模型质量相当。
 
 1. 1.0 前允许在次版本中调整公开接口，但必须在发行说明列出不兼容项和适配步骤；补丁版本只做兼容修复。候选验证期间如有代码变化，重新生成候选并重跑受影响检查。
 2. 定义的作者 `version`、服务的包版本、目录的单调 `revision` 是三种独立标识。更新作者版本不会自动移动应用引用或空间安装。

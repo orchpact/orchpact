@@ -1,4 +1,4 @@
-"""Fresh CLI and signed HTTP acceptance, using only a local synthetic provider."""
+"""Fresh CLI and direct workflow HTTP acceptance, using only a local synthetic provider."""
 import argparse
 import copy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,9 +14,6 @@ import threading
 import time
 
 import httpx
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from orchpact.application_signing import SigningCredentials
 from orchpact.testing import database_url_for
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -120,64 +117,37 @@ def smoke(output):
                         api('POST', '/admin/users/' + me['user_id'] + '/credits', json=dict(delta=1000, reason='synthetic release smoke'), headers={'Idempotency-Key': 'smoke-budget'})
                         definition = json.loads((ROOT / 'examples/workflows/department-review.json').read_text())
                         asset = api('POST', '/workflows', json=definition)
-                        keys = {}
-                        for name in ('smoke-a', 'smoke-b'):
-                            api('POST', '/apps/' + name + '/binding', json=dict(name=name, workflow_id=definition['id'], workflow_revision=1, expected_revision=0))
-                            api('POST', '/apps/' + name + '/install?binding_revision=1&expected_revision=0', json={'bindings': {'models': {'reasoning': 'fixture'}}})
-                            private = Ed25519PrivateKey.generate()
-                            public = private.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
-                            key = api('POST', '/apps/' + name + '/keys', json=dict(label='synthetic ephemeral', public_key=public, user_id=me['user_id'], workspace_id=me['workspace_id']))
-                            keys[name] = SigningCredentials(name, key['id'], private)
-                        checks.append('one-workflow-two-independent-signed-apps')
-
-                        def signed(name, method, path, value=None, idempotency=''):
-                            body = json.dumps(value).encode() if value is not None else b''
-                            headers = keys[name].headers(method, path, '127.0.0.1:' + str(port), body, idempotency_key=idempotency)
-                            headers['Content-Type'] = 'application/json'
-                            if idempotency:
-                                headers['Idempotency-Key'] = idempotency
-                            return app.request(method, path, content=body, headers=headers)
-
-                        payload = dict(operation='calculate', input={'records': [{'id': 'a', 'amount': 3}, {'id': 'b', 'amount': 5}]}, context={})
-                        runs = {}
-                        for name in keys:
-                            path = '/api/v1/apps/' + name + '/runs'
-                            response = signed(name, 'POST', path, payload, 'same-business-key')
-                            response.raise_for_status()
-                            run = response.json()
-                            deadline = time.monotonic() + 45
-                            while time.monotonic() < deadline:
-                                run = api('GET', '/apps/' + name + '/runs/' + run['id'])
-                                if run['status'] in ('completed', 'failed', 'partial', 'cancelled'):
-                                    break
-                                time.sleep(0.1)
-                            assert run['status'] == 'completed', 'Synthetic execution did not complete: ' + run['status']
-                            assert run['result'] == dict(total=8, source_ids=['a', 'b'])
-                            assert run['workflow']['sha256'] == asset['sha256']
-                            assert run['usage']['complete'] and len(run['requests']) == 3
-                            assert len(run['crew_runs']) == 2
-                            assert sorted(len(c['roster']) for c in run['crew_runs']) == [1,2]
-                            assert all(r['accounting']['state'] == 'settled' for r in run['requests'])
-                            response = signed(name, 'GET', '/api/v1/artifacts/' + run['artifact_id'] + '/download')
-                            response.raise_for_status()
-                            assert response.json() == run['result']
-                            replay = signed(name, 'POST', path, payload, 'same-business-key')
-                            replay.raise_for_status()
-                            assert replay.json()['id'] == run['id']
-                            runs[name] = run
-                        assert runs['smoke-a']['id'] != runs['smoke-b']['id']
-                        assert signed('smoke-a', 'GET', '/api/v1/apps/smoke-b/runs/' + runs['smoke-b']['id']).status_code in (403, 404)
-                        assert signed('smoke-a', 'POST', '/api/v1/workflows', definition).status_code == 403
-                        checks.append('signed-execution-review-download-isolation-idempotency-settlement')
+                        install=dict(workflow_revision=1,expected_revision=0,bindings={'models':{'reasoning':'fixture'}})
+                        preview=api('POST','/workflows/'+definition['id']+'/preview',json={k:v for k,v in install.items() if k!='expected_revision'})
+                        assert preview['action']=='install'
+                        api('POST','/workflows/'+definition['id']+'/install',json=install)
+                        checks.append('direct-workflow-install-no-child-application')
+                        payload=dict(operation='calculate',input={'records':[{'id':'a','amount':3},{'id':'b','amount':5}]},context={})
+                        path='/workflows/'+definition['id']+'/runs'
+                        run=api('POST',path,json=payload,headers={'Idempotency-Key':'same-business-key'})
+                        deadline=time.monotonic()+45
+                        while time.monotonic()<deadline:
+                            run=api('GET','/runs/'+run['id'])
+                            if run['status'] in ('completed','failed','partial','cancelled'):break
+                            time.sleep(0.1)
+                        assert run['status']=='completed',run['status']
+                        assert run['result']==dict(total=8,source_ids=['a','b'])
+                        assert run['workflow']['sha256']==asset['sha256']
+                        assert 'application_id' not in run
+                        assert len(run['requests'])==3 and all(r['accounting']['state']=='settled' for r in run['requests'])
+                        assert api('POST',path,json=payload,headers={'Idempotency-Key':'same-business-key'})['id']==run['id']
+                        assert admin.get('/api/v1/artifacts/'+run['artifact_id']+'/download').json()==run['result']
+                        assert admin.post('/api/v1/apps/unused/keys',json={}).status_code==404
+                        assert admin.post('/api/v1/apps/unused/binding',json={}).status_code==404
+                        checks.append('direct-execution-review-download-idempotency-settlement')
                         updated = copy.deepcopy(definition)
                         updated['version'] = '1.1.0'
                         api('POST', '/workflows?revision=1', json=updated)
                         stop()
                         start()
-                        for name, run in runs.items():
-                            assert api('GET', '/apps/' + name)['workflow']['revision'] == 1
-                            assert api('GET', '/apps/' + name + '/runs/' + run['id'])['workflow'] == run['workflow']
-                        assert SyntheticProvider.calls == 6
+                        assert api('GET','/workflows/'+definition['id']+'/installation')['workflow_revision']==1
+                        assert api('GET','/runs/'+run['id'])['workflow']==run['workflow']
+                        assert SyntheticProvider.calls==3
                         checks.append('restart-preserves-original-pins-and-snapshots-no-replay')
                 finally:
                     stop()

@@ -64,7 +64,15 @@ class KernelTests(KernelFixture):
         report=dict(passed=False,issues=[dict(node_key='writer',reason='wrong value')],reviewed_artifact_ids=[a['artifact_id'] for a in gate['deliveries']])
         self.s.complete_work(gate['execution_context'],gate['task']['id'],gate['task']['attempt_id'],'review',[dict(path='audit.json',content=dumps(report))])
         next_ctx=self.s.claim();self.assertEqual(next_ctx['task']['id'],first['task']['id'])
+        self.assertIn('wrong value',next_ctx['task']['description'])
+        previous=next_ctx['repair_candidate']
+        self.assertEqual(previous['task_id'],first['task']['id'])
+        self.assertFalse(previous['accepted']);self.assertTrue(previous['complete'])
+        self.assertEqual(json.loads(previous['files'][0]['content']),{'value':1})
         self.finish(next_ctx,2);gate=self.s.claim()
+        self.assertNotIn('wrong value',gate['task']['description'])
+        self.assertNotIn('返工要求',gate['task']['description'])
+        self.assertNotIn('repair_candidate',gate)
         report.update(passed=True,issues=[],reviewed_artifact_ids=[a['artifact_id'] for a in gate['deliveries']])
         self.s.complete_work(gate['execution_context'],gate['task']['id'],gate['task']['attempt_id'],'review',[dict(path='audit.json',content=dumps(report))])
         self.assertEqual(self.view(run)['result'],{'value':2})
@@ -80,6 +88,19 @@ class KernelTests(KernelFixture):
         self.finish(value=2)
         response=self.client.post('/api/v1/runs/'+run['id']+'/commands',json=dict(key='stale',action='review',payload=dict(artifact_id=artifact['id'],sha256=artifact['sha256'],verdict='accept',feedback='old')))
         self.assertEqual(response.status_code,409)
+
+    def test_repair_candidate_is_bounded_and_separate_from_accepted_dependencies(self):
+        run=self.invoke();ctx=self.s.claim()
+        self.s.complete_work(ctx['execution_context'],ctx['task']['id'],ctx['task']['attempt_id'],'large candidate',
+            [dict(path='result.json',content=dumps({'value':1})+' '*20000)])
+        with self.s.db.tx() as c:
+            old=self.s.row(c,'tasks',ctx['task']['id']);artifact=self.s.row(c,'artifacts',old['artifact_id'])
+            self.s.invalidate(c,run['id'],{old['id']},'Change the value')
+        current=self.s.claim();previous=current['repair_candidate']
+        self.assertFalse(previous['complete']);self.assertTrue(previous['files'][0]['truncated'])
+        self.assertFalse(previous['accepted']);self.assertEqual(previous['sha256'],artifact['sha256'])
+        self.assertEqual(current['inputs'],[]);self.assertEqual(current['deliveries'],[])
+        self.assertIsNone(current['task']['artifact_id'])
 
     def test_cancel_refuses_late_publication_but_keeps_attempt(self):
         run=self.invoke();ctx=self.s.claim()
@@ -186,6 +207,67 @@ class KernelTests(KernelFixture):
         response=self.client.post('/api/v1/runs/'+run['id']+'/commands',json=dict(key='cancel-final',action='amend',revision=1,payload=dict(reason='invalid cancellation',changes=[dict(task_id=writer['id'],cancel=True)])))
         self.assertEqual(response.status_code,409)
         self.assertEqual(self.view(run)['revision'],1)
+
+    def test_coordinator_cannot_amend_even_with_an_existing_grant(self):
+        run=self.invoke(package(review=True))
+        gate=next(task for task in run['tasks'] if task['node_key']=='reviewer')
+        with self.s.db.tx() as c:
+            root=self.s.row(c,'tasks',run['root_task_id']);ctx=self.s.task_context(c,root)
+            grant=c.execute('SELECT * FROM mandates WHERE subject=%s',('task:'+root['id'],)).fetchone()
+            self.assertNotIn('amend',loads(grant['actions']))
+            # Existing installations may still have an old, broad task grant.
+            c.execute('UPDATE mandates SET actions=%s WHERE id=%s',(dumps(sorted(self.s.policies.ACTIONS)),grant['id']))
+        with self.assertRaises(Forbidden):
+            self.s.command(ctx,run['id'],dict(key='agent-amend',action='amend',payload=dict(reason='Skip review',changes=[dict(task_id=gate['id'],cancel=True)])))
+        self.assertEqual(self.view(run)['revision'],1)
+        self.finish()
+        self.assertNotEqual(self.view(run)['status'],'completed')
+        self.assertEqual(self.s.claim()['task']['node_key'],'reviewer')
+
+    def test_user_cannot_cancel_or_rewrite_a_gate_or_remove_its_inputs(self):
+        run=self.invoke(package(review=True));tasks={t['node_key']:t for t in run['tasks'] if t['node_key']}
+        changes=[dict(task_id=tasks['reviewer']['id'],cancel=True),
+                 dict(task_id=tasks['reviewer']['id'],description='Always approve'),
+                 dict(task_id=tasks['reviewer']['id'],expected='Ignore errors'),
+                 dict(task_id=tasks['reviewer']['id'],depends_on=[]),
+                 dict(task_id=tasks['writer']['id'],cancel=True)]
+        for index,change in enumerate(changes):
+            with self.subTest(change=change):
+                response=self.client.post('/api/v1/runs/'+run['id']+'/commands',json=dict(key='weaken-'+str(index),action='amend',payload=dict(reason='Change review',changes=[change])))
+                self.assertEqual(response.status_code,409,response.text)
+                self.assertEqual(response.json()['code'],'acceptance_locked')
+                self.assertEqual(self.view(run)['revision'],1)
+        with self.s.db.connect() as c:
+            self.assertEqual(c.execute('SELECT count(*) FROM commands WHERE project_id=%s',(run['id'],)).fetchone()[0],0)
+
+    def test_gate_ancestor_cannot_be_cancelled_but_optional_sibling_can(self):
+        value=package(review=True);nodes=value['operations']['generate']['execution_plan']['nodes']
+        nodes[1]['parent']='review-team'
+        nodes.append(dict(key='review-team',description='Review team',expected='Review record',exports=['audit.json']))
+        optional=copy.deepcopy(nodes[0]);optional.update(key='optional',outputs={'optional.json':SCHEMA})
+        nodes.append(optional)
+        run=self.invoke(value);tasks={t['node_key']:t for t in run['tasks'] if t['node_key']}
+        path='/api/v1/runs/'+run['id']+'/commands'
+        blocked=self.client.post(path,json=dict(key='hide-gate',action='amend',payload=dict(reason='Skip group',changes=[dict(task_id=tasks['review-team']['id'],cancel=True)])))
+        self.assertEqual(blocked.status_code,409,blocked.text)
+        allowed=self.client.post(path,json=dict(key='cancel-optional',action='amend',payload=dict(reason='Remove optional work',changes=[dict(task_id=tasks['optional']['id'],cancel=True)])))
+        self.assertEqual(allowed.status_code,200,allowed.text)
+        self.finish()
+        self.assertNotEqual(self.view(run)['status'],'completed')
+
+    def test_consumer_waits_for_declared_review_and_cannot_drop_it(self):
+        self.s.settings=replace(self.settings,max_tasks_per_project=2)
+        value=package(review=True);nodes=value['operations']['generate']['execution_plan']['nodes']
+        consumer=copy.deepcopy(nodes[0]);consumer.update(key='consumer',depends_on=['writer','reviewer'],outputs={'consumer.json':SCHEMA})
+        nodes.append(consumer)
+        run=self.invoke(value);tasks={t['node_key']:t for t in run['tasks'] if t['node_key']}
+        response=self.client.post('/api/v1/runs/'+run['id']+'/commands',json=dict(key='skip-review-dependency',action='amend',payload=dict(reason='Start early',changes=[dict(task_id=tasks['consumer']['id'],depends_on=[tasks['writer']['id']])])))
+        self.assertEqual(response.status_code,409,response.text)
+        self.finish();gate=self.s.claim()
+        self.assertEqual(gate['task']['node_key'],'reviewer');self.assertIsNone(self.s.claim())
+        self.s.complete_work(gate['execution_context'],gate['task']['id'],gate['task']['attempt_id'],'review',[
+            dict(path='audit.json',content=dumps(dict(passed=True,reviewed_artifact_ids=[item['artifact_id'] for item in gate['deliveries']])) )])
+        self.assertEqual(self.s.claim()['task']['node_key'],'consumer')
 
     def test_aggregation_storage_failure_preserves_successful_worker(self):
         from unittest.mock import patch

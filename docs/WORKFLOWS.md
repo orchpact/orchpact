@@ -1,19 +1,16 @@
-# 工作流资产、应用绑定、空间安装与执行
+# 工作流资产、空间安装与执行
 
 Orchpact 是可自托管的声明式工作流执行服务。定义描述团队、岗位、阶段依赖、资源需求、交付和验收，CrewAI 执行团队内部协作。定义不依附某个消费应用；多个使用方可以引用同一资产与修订，同时保留各自的接入身份和执行边界。
 
-## 四个独立动作
+## 三个独立动作
 
 | 动作 | 标识与版本 | 作用 |
 | --- | --- | --- |
-| 发布定义 | workflow_id + workflow revision | 独立目录；保存作者 version、SHA-256 与不可覆盖的 JSON 定义 |
-| 应用绑定 | application_id + application binding revision | 应用以独立签名身份固定引用 workflow_id + workflow_revision；不使用隐式 latest |
-| 空间安装 | Workspace + application_id + installed_revision | 解析职责别名和本地模型绑定，生成该空间/应用独立的组织实例 |
-| 发起执行 | run ID | 固定本次输入、原付款人、工作流来源、应用绑定修订、模型与任务快照 |
+| 发布定义 | workflow_id + workflow revision | 保存作者 version、SHA-256 和不可覆盖的定义 |
+| 空间安装 | Workspace + workflow_id + installation revision | 固定工作流修订和本地模型/工具绑定 |
+| 发起执行 | run ID | 固定输入、付款人、定义、资源和验收快照 |
 
-发布不会修改任何应用；应用更新引用不会升级已安装空间；显式空间升级不重写旧执行。工作流修订与应用绑定修订分别计数，不能混用。
-
-例如 analysis-app 和 report-app 都绑定 department-review revision 1：定义 ID 和指纹相同，应用 ID、公钥、资源绑定、运行、文件和账务边界分别保留。即使在同一个 Workspace 中，A 的应用身份也不能读取 B 的执行、文件或调用回执。
+发布不升级空间；显式安装升级不重写旧执行。相同 Workspace/工作流/幂等键跨升级仍回读原执行。工作流不再要求独立子应用、签名或网关。直接接口和历史兼容边界以 [直接运行工作流](APPLICATIONS.md) 为准。
 
 ## 声明如何成为一次团队执行
 
@@ -27,6 +24,16 @@ Orchpact 是可自托管的声明式工作流执行服务。定义描述团队�
 | `gate`、`repair_from`、`rules` | 审校门禁、允许返工范围与确定性检查 | 由平台检查当前产物和推进有界返工 |
 
 完整团队示例见 [department-review.json](../examples/workflows/department-review.json)。团队内部 notes 通过 CrewAI 上下文交接，跨团队依赖通过平台产物交接；团队结束只是候选输出，仍须通过交付契约和适用验收。每次实际启动创建新运行对象，工作流 JSON 不嵌入 Crew、Task、Python 回调或实例凭据。声明与实际对象的完整映射见 [执行团队设计](TEAM_EXECUTION.md)。
+
+固定计划是当前推荐入口。缺省无计划时的自主规划、招募和动态分派保留为实验能力。执行身份不能提交 `amend`，旧的宽泛授权也不例外。获授权用户可以调整未开始的普通工作、增加节点；声明 `gate`、`verification`、`rules` 或冻结独立验收策略的节点不能取消或改写验收描述/期望，其输入依赖及包含它们的汇总路径不能取消。已有验收依赖不能移除，可增加依赖和更严格的检查。削弱验收的变更返回 `acceptance_locked`，应发布新定义并发起新执行，不原地修改历史契约。
+
+节点 `accepted` 只表示通过该节点声明的检查及适用验收，不自动包含其他独立审校节点的结论。需要等待审校的下游必须在 `depends_on` 中同时声明数据来源和审校门；审校读取生产者候选，消费节点等待审校完成。平台不从自然语言推断这条依赖，也不自动改变已有定义的执行图。
+
+### 将创作策略写入定义
+
+[explicit-reference-report.json](../examples/workflows/explicit-reference-report.json) 将原始资料整理、来源选择、报告撰写声明为三个独立节点。`selection.json` 用 Schema 限制引用数量，用 `references` 检查来源 ID；成稿通过 `equals_dependency` 保留选择结果，用 `text_references` 检查正文引用闭包。每个节点的模型调用、费用、产物和失败都沿用普通运行记录。
+
+执行器及模型适配器不再根据引用规则隐式启动来源选择、不动态收窄冻结的输出 Schema、不注入报告专用提示词。通用 JSON 协议修正、文件/业务规则检查及有界错误反馈继续保留。旧定义需要选源策略时，应参考示例发布新修订并显式升级安装；旧执行、回执和已保存产物不重写。示例只演示创作步骤与引用约束，不验证资料抄录、论断是否受来源支持或事实真伪，相关保证需要独立 Verifier 或人工验收。
 
 ## 定义与模型、工具资源
 
@@ -78,7 +85,13 @@ Agent、工具和组织节点可声明 `verification={"tool_ref":"verifier","req
 
 候选 Artifact 先固定 ID/SHA-256，task 保持 running、review pending，Verifier 在事务外读取平台构造的 `artifact + contract_digest + parameters`。Verifier 返回 `PASS|FAIL|INCONCLUSIVE` 和有界 checks；HTTP 成功不是 PASS，缺失/未知/矛盾检查为 INCONCLUSIVE。证据绑定 Artifact ID、摘要、generation、契约摘要、Verifier 版本与 tool_call_id，落库后才允许现有 `review()` 接受。waive 仍只是 partial/waived，恢复只回读已有 completed 验证回执，UNKNOWN 不因换 attempt 或 Artifact 重放。
 
+调用前被拒绝的候选（例如 Verifier 提供者已停用）会标记为失败，原因记录在工作项和尝试中。正常停机拦下尚未发起的验证时，候选保持待验，交由重启恢复处理。只有实际调用记录可以关联验证证据。重启时按候选和冻结绑定核对已完成回执，缺失或无效回执的候选留给中断处理，其余候选继续离线恢复。恢复中才生成的根候选由正常调度继续验证。
+
 确定性 FAIL 可使用 checks 中的 `node_key`、`artifact_path`、`field_path`、`check_id` 和 `repair` 进入现有定向返工：平台按有效上游 node_key、repair_from、当前节点的顺序选择，并沿依赖和必要上级汇总失效，独立 sibling 不变。INCONCLUSIVE、UNKNOWN 和工具执行失败不自动返工。`execution_plans.repairs/max_repairs` 继续限制总次数，旧 Artifact/证据不覆盖，新代次必须重新取得 PASS。
+
+具体返工要求只加入被选中修正节点的任务说明。因上游版本变化而失效的下游节点重新读取最新依赖，不继承上游旧缺陷作为自己的未决要求，避免审校反复引用已经修复的旧正文。`plan.rework` 事件分别记录直接修正目标 `targets` 和全部失效节点 `affected`，历史验证证据仍保留。
+
+当前代次的直接修正 Agent 通过 `repair_candidate` 获取本任务上一次不可变候选及 ID、SHA-256、原 attempt。它独立于已验收依赖 `deliveries`，标记 `accepted=false`；内容遵守同一交付摘录限额及总体上下文上限，截断时 `complete=false`。作者可在原稿上修正，避免仅凭失败摘要重写而丢失合规内容。下游重新审校不自动接收旧报告作为候选。此附加上下文也进入付费响应恢复的输入一致性检查，不能复用基于不同旧稿生成的响应。
 
 工具工作项只冻结本槽位，attempt 的 `model_id` 为 `deterministic`。完全不含 Agent/团队/动态操作的纯工具定义可省略模型槽位与 unit model，安装和运行不强制选择文本模型。completed 结果跨明确重试幂等回读；UNKNOWN 不重放。只有 `retry_policy=safe_only` 的只读节点可在明确失败后由人工显式重试。
 
@@ -113,52 +126,28 @@ uv run orchpact component-expand author.json \
 
 “使用此定义登记”只将预览定义带入现有发布编辑器。确认保存才调用现有发布接口，不会自动创建应用绑定、安装 Workspace 或发起执行。模板不接收真实模型、endpoint、凭据、Workspace 或私有 Artifact ID；受控枚举只表达作者预定义的逻辑引用，物理资源继续在安装页独立绑定。首版没有远程模板、模板市场或拖拽编辑器。
 
-## 目录与应用 API
+## 目录、安装与执行 API
 
-以下路径均带 /api/v1。目录和全局应用绑定仅管理员访问，不加入产品域名或网关白名单。
+以下路径带 `/api/v1`。目录发布和修改由管理员执行，显式安装由当前 Workspace 所有者或管理员执行。
 
 | 操作 | 接口 |
 | --- | --- |
-| 固定模板目录 | GET /workflow-templates，管理员，只读，返回版本、表单 Schema 与模板 SHA-256 |
-| 模板编译预览 | POST /workflow-templates/{template_id}/preview，管理员，body 为 {sha256,parameters}；不写目录、绑定或安装 |
-| 校验提交内容 | POST /workflows/validate，已认证上下文，只读 |
-| 发布修订 | POST /workflows?revision=N，body 为定义；N 是当前目录头修订，新建为 0 |
-| 列目录 | GET /workflows |
-| 读特定修订 | GET /workflows/{workflow_id}?revision=N；省略仅用于读取当前头 |
-| 导出特定修订 | GET /workflows/{workflow_id}/definition?revision=N |
-| 创建/更新应用绑定 | POST /apps/{application_id}/binding |
-| 读取应用与固定来源 | GET /apps/{application_id}，沿用应用签名和成员检查 |
-| 导出应用引用的定义 | GET /apps/{application_id}/definition |
-| 预览空间安装 | POST /apps/{application_id}/preview，body 为 {bindings:{models:{...}}} |
-| 确认安装 | POST /apps/{application_id}/install?expected_revision=N&binding_revision=M，同上 body |
-| 发起执行 | POST /apps/{application_id}/runs，沿用原有幂等、授权、余额与付款人规则 |
+| 模板目录与预览 | `GET /workflow-templates`、`POST /workflow-templates/{id}/preview` |
+| 发布/校验定义 | `POST /workflows?revision=N`、`POST /workflows/validate` |
+| 目录与明确修订 | `GET /workflows`、`GET /workflows/{id}?revision=N` |
+| 导出定义 | `GET /workflows/{id}/definition?revision=N` |
+| 预览资源 | `POST /workflows/{id}/preview`，body `{workflow_revision,bindings}` |
+| 安装资源 | `POST /workflows/{id}/install`，增加 `expected_revision` |
+| 读当前安装 | `GET /workflows/{id}/installation` |
+| 发起/列出执行 | `POST/GET /workflows/{id}/runs` |
+| 读执行与交付 | `GET /runs/{id}` |
 
-应用绑定示例：
-
-```json
-{"name":"研究应用","workflow_id":"shared-workflow","workflow_revision":1,"expected_revision":0}
-```
-
-workflow_revision 必须明确且存在。expected_revision 是当前应用绑定修订，新应用为 0。可由管理员显式传 enabled/require_signature，省略时新建默认均为 true，更新时保留原值。应用标识不需要与工作流标识相同。
-
-应用读模型的 revision 是应用绑定修订，workflow.revision 是固定工作流修订，installed_revision 是当前空间已安装的应用修订。manifest 返回所引用的作者定义，其 id 仍是工作流 ID。
-
-安装时 expected_revision 使用当前空间安装修订（新建 0），binding_revision 使用预览返回的应用 revision。任一变化会拒绝旧预览。显式绑定/升级仍需空间所有者或管理员。相同应用修订不能暗中改绑模型或工具；先生成新的应用绑定修订，再显式升级空间。
-
-run.workflow 保存 id、version、revision、sha256、application_binding_revision 与本次模型/工具 bindings；声明工具时另有安全 `tool_bindings` 摘要。不同应用可有不同绑定修订和资源映射，但同一工作流修订的定义指纹保持相同。
-
-## SDK 与内联组织包
-
-orchpact.interfaces.client.configure 支持 --application、--application-name、--install 和 --bindings。公开包装入口为 examples/register-workflow.py。绑定文件只发送安装接口，不混入工作流定义。管理凭据只从环境读取，私钥由应用独立保管。
-
---update 明确发布工作流新修订并更新指定应用引用；其他应用继续使用自己的固定引用。空间安装还需 --install。没有 --application 时，configure 通过 organization-packages 登记与应用同标识的内联组织包。需要多个应用复用时，应发布独立工作流资产。
-
-organization-packages 保留按应用登记的内联组织包。已引用独立工作流的应用拒绝通过该入口覆盖，必须显式更新 binding。内联组织包与目录引用是两种明确的登记方式；应用身份与执行权限保持各自边界。
+CLI 登记脚本不再接受应用或网关密钥参数，`--install` 必须提供 `--bindings`。安装修订与目录修订分别计数；修改模型或工具绑定会形成新的安装范围并保留旧运行。工具策略可使用 workspace_ids/workflow_ids 限制范围，旧 application_ids 仅用于历史范围，不自动解除。兼容执行 API 不进入公开 OpenAPI，已有签名范围仍对普通会话关闭。
 
 ## 存储与边界
 
-workflows 保存头修订；workflow_versions 保存不可覆盖的历史定义；application_bindings 保存每次应用绑定。业务写入、修订检查和事件同事务提交，外键保证引用的工作流版本存在。
+workflows 保存头修订；workflow_versions 保存不可覆盖的历史定义；workflow_installations 保存各 Workspace 的固定工作流版本和安装修订。旧应用表/绑定继续作为私有存储范围和历史兼容结构保留。业务写入、修订检查和事件同事务提交，外键保证引用的工作流版本存在。
 
-首次初始化统一创建完整当前 Schema，登记 0001_initial_schema 和当前全部命名迁移；已有实例经持锁、先备份的命名迁移升级。目录、绑定与执行在同一数据库事务边界内维护。
+首次初始化统一创建完整当前 Schema，登记 0001_initial_schema 和当前全部命名迁移；已有实例经持锁、先备份的命名迁移升级。目录、安装与执行在同一数据库事务边界内维护。
 
 当前仍为单主进程，节点能力侧重模型协作与文件交付。通用人工资格解析、完整异常分支语言和远程执行尚未实现；外部 Agent 适配不纳入当前路线。定义复用不意味着共享账号、运行权限、凭据或余额。
