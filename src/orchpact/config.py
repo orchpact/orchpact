@@ -25,6 +25,7 @@ class Settings:
     database_url: str = field(default="",repr=False)
     products: dict = field(default_factory=dict)
     credits: dict = field(default_factory=lambda: dict(DEFAULT_POLICY))
+    allow_experimental_planning: bool = False
 
     def __post_init__(self):
         object.__setattr__(self,'credits',validate_policy(self.credits))
@@ -47,6 +48,8 @@ class Settings:
             raise ValueError("execution.workers 必须为1到64的整数")
         if type(self.max_tasks_per_project) is not int or not 1 <= self.max_tasks_per_project <= self.workers:
             raise ValueError("execution.max_tasks_per_project 必须为1到workers的整数")
+        if type(self.allow_experimental_planning) is not bool:
+            raise ValueError("execution.allow_experimental_planning 必须为布尔值")
 
     def origin_for_host(self,host):
         if self.public_origin and urlparse(self.public_origin).hostname==host:return self.public_origin
@@ -101,7 +104,7 @@ class Settings:
         frontends=tomllib.loads(frontend_file.read_text()).get('frontends',{}) if frontend_file.exists() else {}
         execution_file=root/"config/execution.toml"
         execution=tomllib.loads(execution_file.read_text()).get("execution",{}) if execution_file.exists() else {}
-        unknown=set(execution)-{"workers","max_tasks_per_project"}
+        unknown=set(execution)-{"workers","max_tasks_per_project","allow_experimental_planning"}
         if unknown:raise ValueError("未知执行配置："+", ".join(sorted(unknown)))
         security_file=root/"config/security.toml"
         security=tomllib.loads(security_file.read_text()).get("security",{}) if security_file.exists() else {}
@@ -110,7 +113,7 @@ class Settings:
         credit_config=tomllib.loads(credits_file.read_text()) if credits_file.exists() else {}
         if set(credit_config)-{'credits'}:raise ValueError('积分配置只允许[credits]配置段')
         credits=credit_config.get('credits',{})
-        if managed:execution=managed['execution']
+        if managed:execution={**execution, **managed['execution']}
         settings=cls(root, token, enabled, root / "var", host, port, host in ("127.0.0.1", "localhost", "::1"),frontends,**execution,**security,credits=credits,database_url=database_url)
         if managed:
             from .provider_config import ProviderConfiguration

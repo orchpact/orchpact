@@ -250,17 +250,23 @@ class ToolRuntimeTests(KernelFixture):
     def test_fresh_schema_and_named_upgrade_preserve_history(self):
         run,ctx,runtime = self.start()
         with self.s.db.tx() as c:
+            c.execute('DROP TABLE tool_approvals')
             c.execute('DROP TABLE verification_evidence')
             c.execute('DROP TABLE tool_invocations')
             c.execute('ALTER TABLE projects DROP COLUMN tool_limit')
-            c.execute("DELETE FROM schema_migrations WHERE name='0002_tool_runtime'")
-        statements = dict(MIGRATIONS)['0002_tool_runtime']
+            c.execute("DELETE FROM schema_migrations WHERE name IN ('0002_tool_runtime','0003_verification_evidence','0005_tool_approvals')")
+        migrations=dict(MIGRATIONS)
+        statements = migrations['0002_tool_runtime']
         self.assertTrue(self.s.db.migrate('0002_tool_runtime',statements))
         self.assertFalse(self.s.db.migrate('0002_tool_runtime',statements))
+        for name in ('0003_verification_evidence','0005_tool_approvals'):
+            self.assertTrue(self.s.db.migrate(name,migrations[name]))
+            self.assertTrue((self.s.db.backup_directory/(name+'.dump')).exists())
         self.assertTrue((self.s.db.backup_directory/'0002_tool_runtime.dump').exists())
         with self.s.db.connect() as c:
             self.assertEqual(c.execute('SELECT tool_limit FROM projects WHERE id=%s',(run['id'],)).fetchone()[0],0)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM tool_invocations').fetchone()[0],0)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM tool_approvals').fetchone()[0],0)
     def test_tool_database_and_private_receipt_restore_as_a_pair(self):
         import os
         from pathlib import Path

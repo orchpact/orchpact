@@ -5,6 +5,7 @@ import hmac
 from pathlib import Path
 import re
 import secrets
+from typing import Literal
 
 from fastapi import FastAPI, Depends, Request, Response, HTTPException, Header, Query, Body
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, HTMLResponse
@@ -51,6 +52,11 @@ class DirectInstallation(Strict):
 
 class InstallWorkflow(DirectInstallation):
     expected_revision: int = Field(ge=0)
+
+
+class ToolApprovalDecision(Strict):
+    approval_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    decision: Literal['approve','reject']
 
 
 def create_app(settings, run_worker=True, executor=None):
@@ -284,6 +290,14 @@ def create_app(settings, run_worker=True, executor=None):
     @app.get('/api/v1/runs/{run}')
     def direct_run(run: str,ctx=Depends(context)):
         return service().delivery.run(ctx,run)
+
+    @app.get('/api/v1/runs/{run}/tool-approvals/{approval}')
+    def tool_approval(run: str, approval: str, ctx=Depends(context)):
+        return service().tool_approvals.read(ctx, run, approval)
+
+    @app.post('/api/v1/runs/{run}/tool-approvals/{approval}/decision')
+    def decide_tool_approval(run: str, approval: str, data: ToolApprovalDecision, ctx=Depends(context)):
+        return service().tool_approvals.decide(ctx, run, approval, data.approval_digest, data.decision)
 
     @app.get('/api/v1/apps/{application}/definition', include_in_schema=False)
     def application_definition(application: str, ctx=Depends(context)):

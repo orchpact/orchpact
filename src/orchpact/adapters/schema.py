@@ -435,6 +435,29 @@ DIRECT_WORKFLOW_SCHEMA = [
 ]
 SCHEMA += DIRECT_WORKFLOW_SCHEMA
 
+TOOL_APPROVAL_SCHEMA = [
+    """CREATE TABLE tool_approvals(
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        task_id TEXT NOT NULL REFERENCES tasks(id),
+        attempt_id TEXT NOT NULL REFERENCES attempts(id),
+        generation BIGINT NOT NULL,
+        logical_tool TEXT NOT NULL,
+        endpoint_ref TEXT NOT NULL,
+        implementation_version TEXT NOT NULL,
+        binding_digest TEXT NOT NULL,
+        arguments TEXT NOT NULL,
+        approval_digest TEXT NOT NULL,
+        decision TEXT CHECK(decision IN ('approve','reject')),
+        decided_by TEXT,
+        decided_at DOUBLE PRECISION,
+        tool_call_id TEXT UNIQUE REFERENCES tool_invocations(id),
+        created DOUBLE PRECISION NOT NULL,
+        UNIQUE(task_id,generation))""",
+    'CREATE INDEX tool_approvals_project ON tool_approvals(project_id,created)',
+]
+SCHEMA += TOOL_APPROVAL_SCHEMA
+
 MIGRATIONS = [
     ('0002_tool_runtime', [
         'ALTER TABLE projects ADD COLUMN tool_limit BIGINT NOT NULL DEFAULT 0',
@@ -467,4 +490,5 @@ MIGRATIONS = [
     ]),
     ('0003_verification_evidence', VERIFICATION_SCHEMA),
     ('0004_direct_workflows', DIRECT_WORKFLOW_SCHEMA),
+    ('0005_tool_approvals', TOOL_APPROVAL_SCHEMA),
 ]

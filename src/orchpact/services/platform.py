@@ -31,6 +31,8 @@ class Platform:
         self.contracts = DeliveryContracts(self)
         from .tools import ToolRuntime
         self.tools = ToolRuntime(self)
+        from .tool_approvals import ToolApprovals
+        self.tool_approvals = ToolApprovals(self)
         from .verification import VerificationService
         self.verifications = VerificationService(self)
         self.stop_event = None
@@ -368,6 +370,11 @@ class Platform:
             operation = manifest['operations'].get(data['operation'])
             if not operation:
                 raise NotFound('操作不存在')
+            if not operation.get('execution_plan') and not self.settings.allow_experimental_planning:
+                # Direct installation scopes still use the common application storage and admission.
+                direct = c.execute("SELECT config::jsonb->>'direct_workflow' FROM applications WHERE id=%s", (app,)).fetchone()[0]
+                if direct:
+                    raise DomainError('fixed_plan_required', '直接运行需要固定执行计划；请发布并安装包含 execution_plan 的修订')
             tools = self.freeze_tools(ctx, app, manifest)
             validate(data['input'], operation.get('input_schema', {}))
             if data.get('image_request'):
@@ -958,6 +965,7 @@ class Platform:
                         crew_runs=[dict(run,roster=loads(run['roster'])) for run in c.execute('SELECT * FROM crew_runs WHERE project_id=%s ORDER BY created,id',(key,))],
                         agent_steps=[dict(step) for step in c.execute('SELECT * FROM agent_steps WHERE project_id=%s ORDER BY created,ordinal,id',(key,))],
                         tool_invocations=[self.tools.public(dict(call)) for call in c.execute('SELECT * FROM tool_invocations WHERE project_id=%s ORDER BY created,id',(key,))],
+                        tool_approvals=self.tool_approvals.summaries(c, key),
                         verification_evidence=[self.verifications.public(dict(evidence)) for evidence in c.execute('SELECT * FROM verification_evidence WHERE project_id=%s ORDER BY created,id',(key,))],
                         requests=requests, usage=summarize(requests), payer_user_id=p['created_by'],workflow=loads(r['binding']).get('workflow'),
                         execution_plan=dict(revision=p['revision'], repairs=plan['repairs']) if plan else None,
@@ -1021,7 +1029,7 @@ class Platform:
             self.policies.authorize(c, ctx, 'ask' if action == 'reply' else action, p)
             if action == 'cancel':
                 c.execute("UPDATE projects SET status='cancelled' WHERE id=%s", (project,))
-                c.execute("UPDATE tasks SET status='cancelled' WHERE project_id=%s AND status IN ('queued','running','waiting')", (project,))
+                c.execute("UPDATE tasks SET status='cancelled' WHERE project_id=%s AND status IN ('queued','running','waiting','awaiting_approval')", (project,))
                 c.execute("UPDATE attempts SET status='cancelled',finished=%s WHERE task_id IN (SELECT id FROM tasks WHERE project_id=%s) AND status='running'", (now(), project))
             elif action == 'retry':
                 task = self.row(c, 'tasks', command.payload['task_id'])

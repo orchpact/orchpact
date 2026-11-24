@@ -218,7 +218,7 @@ def prepare_role(providers,ctx,prompt,inputs,schema,allow_tools):
         if 'search' in capabilities and providers.search_remaining(ctx):
             tools.append(ScopedTool(session, 'search_evidence', 'Search for evidence with a focused query. Each actual provider request consumes the platform search quota and budget.', SearchArguments, 'search', lambda query: providers.search(ctx, query)))
         for slot, frozen in ctx['snapshot'].get('tools', {}).items():
-            if 'tool:' + slot not in capabilities:
+            if 'tool:' + slot not in capabilities or frozen['definition'].get('requires_approval'):
                 continue
             definition = frozen['definition']
             def invoke(step_id, _slot=slot, **arguments):

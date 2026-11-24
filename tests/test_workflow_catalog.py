@@ -57,6 +57,26 @@ class CatalogTests(KernelFixture):
         self.assertEqual(changed.status_code,409)
         self.assertEqual(self.install(revision=2,expected=1).status_code,409)
 
+    def test_direct_admission_requires_fixed_plan_unless_experiment_is_enabled(self):
+        updated=deepcopy(self.value)
+        updated['version']='1.1.0'
+        updated['operations']['generate'].pop('execution_plan')
+        self.client.post('/api/v1/workflows?revision=1',json=updated).raise_for_status()
+        self.install(revision=2).raise_for_status()
+        denied=self.start()
+        self.assertEqual(denied.status_code,409)
+        self.assertEqual(denied.json()['code'],'fixed_plan_required')
+        with self.s.db.connect() as c:
+            self.assertEqual(c.execute('SELECT count(*) FROM invocations').fetchone()[0],0)
+            scope=c.execute('SELECT scope_id FROM workflow_installations').fetchone()[0]
+        legacy_alias=self.client.post('/api/v1/apps/'+scope+'/runs',json=dict(operation='generate',input={}),
+            headers={'Idempotency-Key':'legacy-alias'})
+        self.assertEqual(legacy_alias.json()['code'],'fixed_plan_required')
+        with patch.object(self.s,'settings',replace(self.settings,allow_experimental_planning=True)):
+            started=self.start()
+            started.raise_for_status()
+        self.assertEqual(self.start().json()['id'],started.json()['id'])
+
     def test_two_workspaces_keep_runs_artifacts_and_payers_isolated(self):
         clients=[TestClient(self.app),TestClient(self.app)]
         try:

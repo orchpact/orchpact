@@ -5,7 +5,7 @@
  else root.OrchpactAttention=api;
 })(typeof globalThis!=='undefined'?globalThis:this,()=>{
  'use strict';
- const labels={accounting:'费用待核定',receipt:'结果待确认',review:'待独立验收',question:'待答复',execution:'执行需处理'};
+ const labels={accounting:'费用待核定',receipt:'结果待确认',approval:'外部写操作待审批',review:'待独立验收',question:'待答复',execution:'执行需处理'};
  function items(state){
   const result=[];
   for(const project of state.projects||[]){
@@ -18,11 +18,14 @@
     if(task.required!==false&&task.requires_independent_review&&task.artifact_id&&task.review==='pending'&&['completed','partial'].includes(task.status))
      add('review',task.id,'当前产物需要独立验收，尚未取得通过记录。','打开项目，核验具体文件与哈希后提交决定。');
    }
+   for(const approval of project.tool_approvals||[]){
+    if(approval.status==='pending')add('approval',approval.id,'外部写操作正在等待事前审批。','打开项目，核对目标、参数和执行工作项后作出决定。');
+   }
    for(const question of project.status==='cancelled'?[]:project.questions||[])add('question',question.id,'项目有尚未回答的问题。','打开项目补充约束与依据。');
    if(['failed','interrupted','partial','rejected'].includes(project.status))
     add('execution',project.id,'项目未完整交付，保留了已有成果与执行记录。','先检查缺口、回执及授权，再决定调整、重试或结束。');
   }
-  const order=['receipt','accounting','review','question','execution'];
+  const order=['receipt','accounting','approval','review','question','execution'];
   return result.sort((a,b)=>order.indexOf(a.kind)-order.indexOf(b.kind));
  }
  function accountingLabel(request){

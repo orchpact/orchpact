@@ -12,6 +12,8 @@ Orchpact 的主流程不需要子应用、签名网关或产品域名。用户�
 4. `POST /workflows/{id}/runs` 提交 `{operation,input,context}`，必填 `Idempotency-Key`。实际使用当前空间已安装的明确修订，不隐式跟随目录 latest。
 5. `GET /runs/{id}` 查询状态、产物、验收、证据、用量和可重试工作。
 
+新发起的直接执行默认要求所选操作声明固定 `execution_plan`，否则返回 409 `fixed_plan_required`。有意试验自主规划时，在实例的 `config/execution.toml` 中设置 `[execution]` 下的 `allow_experimental_planning = true` 并重启。已受理执行、幂等回读及历史兼容入口沿用原行为。
+
 安装请求示例：
 
 ```json
@@ -47,6 +49,10 @@ uv run python examples/register-workflow.py examples/workflows/department-review
 | 产物元数据与下载 | `GET /artifacts/{id}`、`/download`、`/preview` |
 | 尝试 | `GET /work-items/{id}/attempts` |
 | 工具 UNKNOWN 只读对账 | `POST /tool-invocations/{id}/reconcile` |
+| 读取待审批外部写操作的目标和参数 | `GET /runs/{id}/tool-approvals/{approval}` |
+| 批准或拒绝一次外部写操作 | `POST /runs/{id}/tool-approvals/{approval}/decision`，提交 `{approval_digest,decision}`，其中 `decision` 为 `approve` 或 `reject` |
+
+执行视图的 `tool_approvals` 列出审批摘要，参数详情及决定只对当前 Workspace 的所有者和管理员开放。批准会将工具节点重新排队。直接执行前仍会复查授权、预算和幂等记录。拒绝、取消或旧代次失效均不能授权发送；已使用的审批关联实际 `tool_call_id`。
 
 `result` 仅在完整验收后返回；二进制交付用 `artifact_id` 下载。声明 verification 的候选保持 running/pending，PASS 证据落库后才可接受。FAIL/INCONCLUSIVE 保留候选及证据；UNKNOWN 不自动重放。waive 只能得到 partial/waived。工作项的 `requires_independent_review` 来自冻结策略，不能通过改变当前策略回写历史。
 

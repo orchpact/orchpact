@@ -27,11 +27,11 @@ HTTP 地址使用无内联凭据、无 query/fragment 的 HTTPS URL；builtin �
 
 工具只使用 `secret` 写入的托管秘密，不使用环境变量凭据，以便旧 run 和明确重试继续解析原秘密引用。工具价格必须明确配置为按 request 的内部积分，`points=0` 是免费，pricing 缺失会在任何外部调用前拒绝；这不是供应商币种金额。成功和确定失败的请求按冻结价格结算，UNKNOWN 保持预留，等待真实回执、只读 lookup 或人工核定。
 
-配置摘要覆盖接口、实现、endpoint 和策略，不覆盖托管秘密引用。语义配置变化后，旧安装不能发起新 run，须登记新应用修订并显式升级；仅轮换秘密时，新 run 使用新引用，旧 run 和重试仍使用旧引用。公开安装/run 元数据不包含 URL、秘密明文或 `_secret_ref`。Runtime 参数、结果与回执位于私有 `var/tool-invocations/`，数据库和 run 审计只保存状态、引用和摘要。
+配置摘要覆盖接口、实现、endpoint 和策略。配置语义变化后，可发布新的工作流修订，预览并显式升级 Workspace 安装，再发起新 run。仅轮换托管秘密时，新 run 使用新引用，旧 run 和重试仍使用旧引用。公开安装与 run 元数据只提供受控的绑定信息。Runtime 参数、结果与回执位于私有 `var/tool-invocations/`。要求事前审批时，数据库还保存待批准的参数，供 Workspace 所有者和管理员通过审批详情接口核验。
 
 ## 可信 Verifier 配置
 
-只读工具可增加 `tool_verifier`，包含 `checks`、`media_types`、`trust_level` 和 `environment`。只有管理员显式设置 `trust_level="trusted"` 的 provider 才能用于交付验收；`checks` 必须覆盖工作流全部 required_checks，`media_types` 必须覆盖被验证产物。该元数据进入安全配置摘要和 run/工作项快照，修改后需要新应用修订和 Workspace 显式升级。普通工具省略或为 null，不改变既有配置摘要。
+只读工具可增加 `tool_verifier`，包含 `checks`、`media_types`、`trust_level` 和 `environment`。只有管理员显式设置 `trust_level="trusted"` 的 provider 才能用于交付验收。`checks` 必须覆盖工作流全部 required_checks，`media_types` 必须覆盖被验证产物。该元数据进入安全配置摘要和 run 与工作项快照，修改后按上面的配置升级流程重新安装。普通工具省略该字段或填 null 时，摘要保持原值。
 
 Verifier 执行结果仍需通过平台语义检查：HTTP 成功、工具自报 PASS 或不完整检查集都不能替代真实 PASS 证据。证据位于 PostgreSQL `verification_evidence` 和配套 `var/verification-evidence/`，备份恢复必须包含两者。
 

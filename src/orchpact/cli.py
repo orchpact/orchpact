@@ -16,7 +16,7 @@ def initialize(root):
     config.mkdir(exist_ok=True, mode=0o700)
     defaults = {
         'models.toml': '# Optional until the first run. Credentials are environment references.\n[models.reasoning]\nlabel = "Text"\nkind = "text"\nmodel = "configure-your-model"\nbase_url = "https://api.deepseek.com"\nkey_env = "DEEPSEEK_API_KEY"\njson_mode = true\nenabled = "auto"\npriority = 10\n',
-        'execution.toml': '[execution]\nworkers = 4\nmax_tasks_per_project = 1\n',
+        'execution.toml': '[execution]\nworkers = 4\nmax_tasks_per_project = 1\nallow_experimental_planning = false\n',
         'credits.toml': '[credits]\ntokens_per_point = 1000\nsearch_points = 10\n',
         'security.toml': '# Public deployments require an explicit HTTPS origin.\n[security]\n',
     }

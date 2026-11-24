@@ -3,6 +3,8 @@ from copy import deepcopy
 import unittest
 from unittest.mock import patch
 
+from fastapi.testclient import TestClient
+from account_fixtures import create_user
 from orchpact.adapters.database import loads
 from orchpact.adapters.tools import ToolRegistry, ToolTransportError
 from orchpact.kernel.workflows import definition_digest, validate_definition
@@ -69,6 +71,18 @@ class ToolNodeDefinitionTests(unittest.TestCase):
         for index,invalid in enumerate(cases):
             with self.subTest(case=index),self.assertRaises(ValueError):validate_definition(invalid)
 
+    def test_approval_is_only_for_deterministic_external_writes(self):
+        value=workflow()
+        self.assertNotIn('requires_approval',validate_definition(value)['resources']['tools']['renderer'])
+        value['resources']['tools']['renderer']['requires_approval']=True
+        with self.assertRaisesRegex(ValueError,'external_write'):
+            validate_definition(value)
+        value['resources']['tools']['renderer']['effect']='external_write'
+        self.assertTrue(validate_definition(value)['resources']['tools']['renderer']['requires_approval'])
+        value['agents']=[dict(unit='entry',name='Writer',role='Writer',capabilities=['text','json','tool:renderer'])]
+        with self.assertRaisesRegex(ValueError,'确定性工具节点'):
+            validate_definition(value)
+
 
 class ToolNodeTests(KernelFixture):
     def setUp(self):
@@ -114,6 +128,119 @@ class ToolNodeTests(KernelFixture):
     def retry(self,task_id,key):
         response=self.client.post('/api/v1/work-items/'+task_id+'/retry',headers={'Idempotency-Key':key})
         self.assertEqual(response.status_code,200,response.text)
+
+    def request_approval(self):
+        value=workflow(effect='external_write')
+        value['resources']['tools']['renderer']['requires_approval']=True
+        body=self.config()
+        provider=next(p for p in body['value']['providers'] if p['id']=='tool:renderer')
+        provider['tool_policy'].update(application_ids=[],workflow_ids=[value['id']])
+        body.pop('restart_required',None)
+        self.client.put('/api/v1/admin/configuration',json=body).raise_for_status()
+        self.client.post('/api/v1/workflows',json=value).raise_for_status()
+        endpoint='/api/v1/workflows/'+value['id']
+        self.client.post(endpoint+'/install',json=dict(workflow_revision=1,expected_revision=0,
+            bindings=self.bindings(value))).raise_for_status()
+        run=self.client.post(endpoint+'/runs',json=dict(operation='generate',input={'value':7}),
+            headers={'Idempotency-Key':'approve-write'}).raise_for_status().json()
+        self.assertTrue(self.app.state.runner.step())
+        path='/api/v1/runs/'+run['id']
+        view=self.client.get(path).raise_for_status().json()
+        approval,=view['tool_approvals']
+        self.assertEqual(approval['status'],'pending')
+        self.assertNotIn('arguments',approval)
+        self.assertNotIn('approval_digest',approval)
+        self.assertEqual(view['status'],'waiting')
+        self.assertEqual(view['requests'],[])
+        self.assertEqual(view['tool_invocations'],[])
+        self.assertEqual(self.synthetic.calls,0)
+        return path,approval
+
+    def test_approved_write_waits_without_dispatch_and_resumes_once(self):
+        path,approval=self.request_approval()
+        detail=path+'/tool-approvals/'+approval['id']
+        self.app.state.runner.recover()
+        self.assertFalse(self.app.state.runner.step())
+        pending=self.client.get(detail).raise_for_status().json()
+        self.assertEqual(pending['arguments'],{'value':7})
+        body=dict(decision='approve',approval_digest=pending['approval_digest'])
+        self.assertEqual(self.client.post(detail+'/decision',json=dict(body,approval_digest='0'*64)).status_code,409)
+        other=TestClient(self.app)
+        try:
+            user=create_user(self.s,other,'approval-member','fixture-password-1234')
+            self.assertEqual(other.get(detail).status_code,404)
+            with self.s.db.tx() as c:
+                c.execute('INSERT INTO workspace_members VALUES(%s,%s)',(self.workspace,user))
+            other.headers['X-Workspace-Id']=self.workspace
+            self.assertEqual(other.get(detail).status_code,403)
+            self.assertEqual(other.post(detail+'/decision',json=body).status_code,403)
+        finally:
+            other.close()
+        self.assertEqual(self.client.post(detail+'/decision',json=body).raise_for_status().json()['status'],'approved')
+        self.assertEqual(self.client.post(detail+'/decision',json=body).raise_for_status().json()['status'],'approved')
+        self.assertEqual(self.synthetic.calls,0)
+        self.app.state.runner.recover()
+        self.assertTrue(self.app.state.runner.step())
+        self.assertFalse(self.app.state.runner.step())
+        view=self.client.get(path).raise_for_status().json()
+        self.assertEqual(view['result'],{'value':7})
+        self.assertEqual(self.synthetic.calls,1)
+        call,=view['tool_invocations']
+        approved,=view['tool_approvals']
+        self.assertEqual(approved['status'],'used')
+        self.assertEqual(approved['tool_call_id'],call['id'])
+        self.assertEqual(len(view['requests']),1)
+
+    def test_cancelled_or_rejected_write_cannot_dispatch(self):
+        for decision in ('reject','cancel'):
+            with self.subTest(decision=decision):
+                # Each run uses a different idempotency key against the same installed revision.
+                if decision=='reject':
+                    path,approval=self.request_approval()
+                else:
+                    run=self.client.post('/api/v1/workflows/fixture/runs',json=dict(operation='generate',
+                        input={'value':7}),headers={'Idempotency-Key':'cancel-write'}).raise_for_status().json()
+                    self.assertTrue(self.app.state.runner.step())
+                    path='/api/v1/runs/'+run['id']
+                    approval,=self.client.get(path).raise_for_status().json()['tool_approvals']
+                detail=path+'/tool-approvals/'+approval['id']
+                url=detail+'/decision'
+                body=dict(approval_digest=self.client.get(detail).raise_for_status().json()['approval_digest'])
+                if decision=='cancel':
+                    self.client.post(path+'/cancel').raise_for_status()
+                else:
+                    rejected=self.client.post(url,json=dict(body,decision='reject')).raise_for_status().json()
+                    self.assertEqual(rejected['status'],'rejected')
+                self.assertEqual(self.client.post(url,json=dict(body,decision='approve')).status_code,409)
+                self.assertFalse(self.app.state.runner.step())
+                self.assertEqual(self.synthetic.calls,0)
+                self.assertEqual(self.client.get(path).raise_for_status().json()['requests'],[])
+
+    def test_approval_cannot_cross_rework_or_replay_an_unknown_write(self):
+        path,old=self.request_approval()
+        previous=path+'/tool-approvals/'+old['id']
+        old_digest=self.client.get(previous).raise_for_status().json()['approval_digest']
+        with self.s.db.tx() as c:
+            self.s.invalidate(c,old['project_id'],{old['task_id']},'synthetic upstream rework')
+        self.assertTrue(self.app.state.runner.step())
+        stale,pending=self.client.get(path).raise_for_status().json()['tool_approvals']
+        self.assertEqual(stale['status'],'stale')
+        self.assertEqual(pending['generation'],old['generation']+1)
+        self.assertEqual(self.client.post(previous+'/decision',
+            json=dict(decision='approve',approval_digest=old_digest)).status_code,409)
+        detail=path+'/tool-approvals/'+pending['id']
+        current_digest=self.client.get(detail).raise_for_status().json()['approval_digest']
+        self.client.post(detail+'/decision',json=dict(decision='approve',approval_digest=current_digest)).raise_for_status()
+        self.synthetic.error=ToolTransportError('timeout')
+        self.assertTrue(self.app.state.runner.step())
+        self.app.state.runner.recover()
+        self.retry(old['task_id'],'approved-unknown-retry')
+        self.assertTrue(self.app.state.runner.step())
+        view=self.client.get(path).raise_for_status().json()
+        self.assertEqual(self.synthetic.calls,1)
+        self.assertEqual([a['status'] for a in view['tool_approvals']],['stale','used'])
+        self.assertEqual([call['status'] for call in view['tool_invocations']],['unknown'])
+        self.assertEqual(view['requests'][0]['accounting']['state'],'held')
 
     def test_pure_tool_workflow_needs_no_model_and_delivers_multiple_json_files(self):
         value=workflow([node(outputs={'result.json':SCHEMA,'audit.json':SCHEMA})])

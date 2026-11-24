@@ -3,3 +3,5 @@
 workers = 10
 # 默认每个项目同时执行一个任务，为不同项目保留执行机会。
 max_tasks_per_project = 1
+# 实验性自主规划仅用于显式启用的实例。变更后重启。
+allow_experimental_planning = false

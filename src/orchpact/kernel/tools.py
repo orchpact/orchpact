@@ -56,6 +56,7 @@ class ToolDefinition(Strict):
     input_schema: dict
     output_schema: dict
     effect: Literal['read', 'create_artifact', 'external_write']
+    requires_approval: bool = Field(default=False, strict=True)
     timeout_ms: int = Field(default=30_000, ge=1, le=120_000)
     max_output_bytes: int = Field(default=1_048_576, ge=1, le=MAX_BYTES)
     retry_policy: Literal['never', 'safe_only'] = 'never'
@@ -72,6 +73,8 @@ class ToolDefinition(Strict):
             raise ValueError('工具权限声明无效')
         if self.effect == 'create_artifact' and self.artifact_contract is None:
             raise ValueError('产物工具必须声明 artifact_contract')
+        if self.requires_approval and self.effect != 'external_write':
+            raise ValueError('仅 external_write 工具可要求事前审批')
         return self
 
 
@@ -92,7 +95,8 @@ def validate_tool_definitions(value):
     for key, requirement in value.items():
         if not isinstance(key, str) or not re.fullmatch(SLOT, key):
             raise ValueError('工具能力槽位名称无效')
-        result[key] = ToolDefinition.model_validate(requirement).model_dump()
+        tool = ToolDefinition.model_validate(requirement)
+        result[key] = tool.model_dump(exclude=set() if tool.requires_approval else {'requires_approval'})
     return result
 
 

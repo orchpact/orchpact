@@ -1,6 +1,6 @@
 # 快速开始
 
-Orchpact（序契）是可自托管的声明式工作流引擎。先声明团队、岗位、依赖、交付规则和验收，再由应用固定引用工作流修订、在 Workspace 绑定资源并执行。CrewAI 负责团队内的 Agent 协作与多轮行动，Orchpact 负责跨团队工作流、授权、回执、账务和产物验收。
+Orchpact（序契）是可自托管的声明式工作流引擎。先声明团队、岗位、依赖、交付规则和验收，再在 Workspace 安装明确的工作流修订并绑定资源。直接运行默认要求固定执行计划。CrewAI 负责团队内的 Agent 协作与多轮行动，Orchpact 负责跨团队工作流、授权、回执、账务和产物验收。
 
 本文走通“分析员与撰稿员组成分析团队，独立审校团队检查交付”的完整示例。长期保存的是声明，每次实际启动创建新的 Crew、Task 和 Agent；具体映射见 [执行团队](TEAM_EXECUTION.md)。
 
@@ -86,6 +86,6 @@ uv run python evals/verify_contracts.py --output /absolute/new/contracts.json
 uv run python scripts/smoke_release.py --output /absolute/new/smoke.json
 ```
 
-前者复现授权、验收、未知结果与幂等结算四类契约；后者在临时实例中走完真实 CLI、签名 HTTP、直接工作流执行和重启核验。它们使用真实隔离存储与合成供应商响应，不证明内容质量、真实检索或成本优势，也不会运行生成的业务代码。
+`verified-delivery.py` 展示通过、拒绝、修复和证据不足四种验收结果。`verify_contracts.py` 检查授权、验收、未知结果与幂等结算。`smoke_release.py` 在临时实例中通过 CLI 启动服务，用管理员 Bearer Token 调用直接工作流 HTTP 接口，并在重启后核验历史记录。这些脚本使用隔离存储和合成供应商响应。
 
 接下来阅读 [架构](ARCHITECTURE.md)、[公开接口](COMPATIBILITY.md)与[管理台](CONSOLE.md)。

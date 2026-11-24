@@ -25,7 +25,7 @@ Orchpact 是可自托管的声明式工作流执行服务。定义描述团队�
 
 完整团队示例见 [department-review.json](../examples/workflows/department-review.json)。团队内部 notes 通过 CrewAI 上下文交接，跨团队依赖通过平台产物交接；团队结束只是候选输出，仍须通过交付契约和适用验收。每次实际启动创建新运行对象，工作流 JSON 不嵌入 Crew、Task、Python 回调或实例凭据。声明与实际对象的完整映射见 [执行团队设计](TEAM_EXECUTION.md)。
 
-固定计划是当前推荐入口。缺省无计划时的自主规划、招募和动态分派保留为实验能力。执行身份不能提交 `amend`，旧的宽泛授权也不例外。获授权用户可以调整未开始的普通工作、增加节点；声明 `gate`、`verification`、`rules` 或冻结独立验收策略的节点不能取消或改写验收描述/期望，其输入依赖及包含它们的汇总路径不能取消。已有验收依赖不能移除，可增加依赖和更严格的检查。削弱验收的变更返回 `acceptance_locked`，应发布新定义并发起新执行，不原地修改历史契约。
+通过直接运行接口新发起执行，默认要求操作声明固定 `execution_plan`。实例可显式启用实验模式，详见 [直接运行工作流](APPLICATIONS.md)。执行身份不能提交 `amend`，旧的宽泛授权也不例外。获授权用户可以调整未开始的普通工作、增加节点；声明 `gate`、`verification`、`rules` 或冻结独立验收策略的节点不能取消或改写验收描述/期望，其输入依赖及包含它们的汇总路径不能取消。已有验收依赖不能移除，可增加依赖和更严格的检查。削弱验收的变更返回 `acceptance_locked`，应发布新定义并发起新执行，不原地修改历史契约。
 
 节点 `accepted` 只表示通过该节点声明的检查及适用验收，不自动包含其他独立审校节点的结论。需要等待审校的下游必须在 `depends_on` 中同时声明数据来源和审校门；审校读取生产者候选，消费节点等待审校完成。平台不从自然语言推断这条依赖，也不自动改变已有定义的执行图。
 
@@ -37,13 +37,16 @@ Orchpact 是可自托管的声明式工作流执行服务。定义描述团队�
 
 ## 定义与模型、工具资源
 
-format 固定为 orchpact-workflow，id 是工作流资产标识，version 是作者版本；units 使用稳定 key，操作/计划使用 unit 别名。resources.models 声明能力槽位，unit、crew member、agent 和节点 staff 可通过 model 引用它。下面是无固定计划的最小定义；多岗位、跨团队审校示例使用上面的 department-review.json，更小的固定计划见 [evidence-review.json](../examples/workflows/evidence-review.json)。
+format 固定为 orchpact-workflow，id 是工作流资产标识，version 是作者版本；units 使用稳定 key，操作/计划使用 unit 别名。resources.models 声明能力槽位，unit、crew member、agent 和节点 staff 可通过 model 引用它。下面的示例包含单节点固定计划。跨团队审校见 [evidence-review.json](../examples/workflows/evidence-review.json)。
 
 ```json
 {"format":"orchpact-workflow","id":"shared-workflow","name":"Example","version":"1.0.0",
  "resources":{"models":{"reasoning":{"capabilities":["text","json"]}}},
  "units":[{"key":"entry","name":"处理组","purpose":"交付约定结果","model":"reasoning"}],
- "operations":{"create":{"unit":"entry","instruction":"交付 result.json","input_schema":{"type":"object"},"output_schema":{"type":"object"},"output_file":"result.json"}}}
+ "operations":{"create":{"unit":"entry","instruction":"交付 result.json","input_schema":{"type":"object"},"output_schema":{"type":"object"},"output_file":"result.json",
+ "execution_plan":{"result_node":"deliver","nodes":[{"key":"deliver","unit":"entry","description":"处理输入并交付约定结果","expected":"result.json",
+ "staff":{"name":"执行者","role":"处理输入","reason":"执行固定节点","capabilities":["text","json"],"model":"reasoning"},
+ "outputs":{"result.json":{"type":"object"}}}]}}}}
 ```
 
 本地模型绑定另存为 `{"models":{"reasoning":"local-profile-id"}}`。绑定必须恰好覆盖声明槽位，所选模型必须满足能力要求。未指定槽位的角色沿用能力选模机制；需要明确使用方模型时应声明 model。
@@ -57,7 +60,7 @@ format 固定为 orchpact-workflow，id 是工作流资产标识，version 是�
  "tools":{"renderer":{"endpoint_ref":"tool:renderer","implementation_version":"1.0.0"}}}
 ```
 
-安装器校验槽位恰好覆盖、接口/版本匹配和 Workspace/应用策略。公开预览与 run 的 `workflow.tool_bindings` 只含类型、版本、endpoint_ref 和配置摘要；真实 URL、provider 记录和秘密引用仅保存于内部 run/工作项快照。配置语义变化需要新应用修订和显式安装升级；托管凭据轮换不回写旧 run 或明确重试。
+安装器校验槽位覆盖、接口与版本匹配，以及 Workspace 和工作流授权范围。run 的 `workflow.tool_bindings` 提供类型、版本、endpoint_ref 和配置摘要。真实 URL、provider 记录和秘密引用保存在内部 run 与工作项快照中。工具配置的语义变化后，可发布新的工作流修订并显式升级安装。仅轮换托管凭据时，旧 run 和重试仍使用原引用。
 
 **当前已实现工具声明、绑定、快照、Tool Runtime、CrewAI 岗位动态调用、确定性工具节点、受控二进制导入和可信验证；MCP transport 尚未实现。** operation 只有显式设置 `tool_limit` 才能调用通用工具，旧定义缺省为 0。岗位动态调用还须在自己的 `capabilities` 中声明 `tool:<槽位>`，例如 `["text","json","tool:renderer"]`；该授权不是模型能力，不会加入模型槽位需求，也不会从其他岗位继承。无工具旧定义不会回填 `tools:{}`、`tool_limit` 或 `kind:null`，其摘要与安装行为不变。
 
@@ -78,6 +81,12 @@ format 固定为 orchpact-workflow，id 是工作流资产标识，version 是�
 工具节点可用 `outputs` 返回 JSON，也可用独立 `artifact_outputs` 声明二进制路径、`media_type` 和 `max_bytes`；二者路径不能重叠。`create_artifact` 必须声明产物输出。工具结果分别使用 `files` 和 `artifacts`，Artifact 条目严格为 `data_base64 + sha256 + media_type`：平台重新解码、核对摘要、大小、路径、媒体结构后才进入现有不可变存储。支持 JSON/UTF-8 文本、PNG/JPEG/WebP、PDF、ZIP 和 DOCX/XLSX/PPTX 的有界检查；其他媒体类型明确拒绝。ZIP 会检查链接、路径穿越、加密项、条目/解压限制和异常压缩比，这些检查不代表真实渲染或业务质量。
 
 operation 可显式使用 `output_kind="artifact"`，以 `output_file + artifact_output` 声明二进制根契约并省略 `output_schema`。completed 时 `result` 为 null，根 `artifact_id` 仍经授权下载。省略 `output_kind` 的旧 JSON 定义行为与摘要不改变。
+
+### 外部写操作事前审批
+
+对需要人工确认的工具，在 `resources.tools` 的对应槽位声明 `"effect":"external_write"` 和 `"requires_approval":true`，由固定计划的 `kind=tool` 节点调用。此类工具不允许加入 Agent 的动态工具列表。省略 `requires_approval` 沿用现有授权调用行为及定义摘要。
+
+平台解析并校验实际参数后，记录绑定工具目标、参数、工作项和代次的审批请求。待审批时释放执行线程，未预留费用，也未发送请求。Workspace 所有者或管理员在管理台查看并决定。批准只允许一次实际调用，发出前仍需通过授权、期限、预算及幂等检查。拒绝会阻断当前工作，取消或返工换代会使未用的批准失效。重复审批和重启不会自动重发未知结果。
 
 ### 可信 Verifier 与验收
 
@@ -116,7 +125,7 @@ uv run orchpact component-expand author.json \
 
 该命令不加载 Settings、数据库、模型或工具，输出与报告必须是不同的新文件。组件可嵌套最多 4 层，每次展开最多 32 个实例；循环、摘要/版本错误、缺失/额外参数、非法引用、命名空间冲突及现有节点/大小超限均拒绝。每个组件实例的节点、unit、模型/工具与 Verifier 槽位独立命名空间化，文件输出、工具输出 Schema、依赖、返工、引用和组织 `exports` 同步改写。
 
-展开结果仍是普通 `orchpact-workflow`，由现有 `validate_definition()` 权威校验；报告另含组件摘要、实例、原始内部节点 `source_map` 和最终 SHA-256，不进入定义或运行快照。发布后仍须独立执行应用绑定与 Workspace 显式安装，组件升级不会热更新历史执行。详细作者格式见 [设计文档](design/tool-component-verification.md#71-组件展开器阶段-7-已实现)。
+展开结果是普通 `orchpact-workflow`，由 `validate_definition()` 校验。独立报告保存组件摘要、实例、原始内部节点 `source_map` 和最终 SHA-256。发布后，由 Workspace 显式安装所选修订。历史执行保留原快照。详细作者格式见 [设计文档](design/tool-component-verification.md#71-组件展开器阶段-7-已实现)。
 
 ## 固定模板与参数表单
 
@@ -124,7 +133,7 @@ uv run orchpact component-expand author.json \
 
 模板目录和预览均仅限管理员。预览请求必须携带目录返回的模板 SHA-256，响应包含解析后的参数、普通规范工作流、最终 SHA-256 和可选组件报告。页面展示操作、实际固定计划节点、依赖和交付文件；参数变化后旧预览失效。模板和参数错误保留输入，并尽量映射到具体字段。
 
-“使用此定义登记”只将预览定义带入现有发布编辑器。确认保存才调用现有发布接口，不会自动创建应用绑定、安装 Workspace 或发起执行。模板不接收真实模型、endpoint、凭据、Workspace 或私有 Artifact ID；受控枚举只表达作者预定义的逻辑引用，物理资源继续在安装页独立绑定。首版没有远程模板、模板市场或拖拽编辑器。
+“使用此定义登记”将预览定义带入发布编辑器。确认保存后，仍需分别安装和发起执行。模板参数中的资源枚举对应作者预定义的逻辑引用，实际模型和工具在安装页绑定。
 
 ## 目录、安装与执行 API
 

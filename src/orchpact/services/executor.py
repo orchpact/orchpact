@@ -6,6 +6,7 @@ from ..kernel.models import WorkOutput, PlanningDecision, IntakeDecision
 from ..kernel.contracts import read_json_delivery, output_model
 from ..kernel.plan import resolve_tool_arguments
 from .tool_artifacts import ToolArtifacts
+from .tool_approvals import AWAITING_APPROVAL
 
 
 class ToolNodeExecutor:
@@ -28,6 +29,8 @@ class ToolNodeExecutor:
         input_value=ctx.get('application',{}).get('input',{})
         arguments=resolve_tool_arguments(node['arguments'],input_value,delivery)
         result=self.service.tools.invoke_node(ctx,slot,arguments)
+        if result['status'] == AWAITING_APPROVAL:
+            return result
         payload=result['result']
         files=[dict(path=path,content=dumps(value)) for path,value in payload.get('files',{}).items()]
         files+=self.artifacts.import_result(node,ctx['snapshot']['tools'][slot]['definition'],payload)

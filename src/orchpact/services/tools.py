@@ -10,6 +10,7 @@ from ..adapters.providers import Providers
 from ..kernel.contracts import validate
 from ..kernel.errors import Forbidden
 from ..provider_http import write_receipt
+from .tool_approvals import AWAITING_APPROVAL
 
 
 def digest(value):
@@ -166,6 +167,10 @@ class ToolRuntime:
             raise ToolCallError('service_stopping')
         adapter_context = self._adapter_context(ctx,slot,arguments,tool_call_id or ident(),idempotency_key)
         definition = adapter_context.definition
+        if definition.get('requires_approval'):
+            node = ctx.get('planned_node') or {}
+            if ctx.get('_crew_member_key') or node.get('kind') != 'tool' or node.get('tool_ref') != slot:
+                raise Forbidden('需要事前审批的工具只允许确定性工具节点调用')
         validate(arguments,definition['input_schema'])
         allowed = {item['artifact_id'] for item in ctx.get('deliveries',[])}
         self._check_artifacts(arguments,allowed,ctx['project']['id'])
@@ -192,6 +197,11 @@ class ToolRuntime:
                     replay['tool_call_id'] = replay.pop('id')
                     return dict(replay,result=receipt['result'])
                 raise ToolCallError('tool_call_not_replayable',old['id'],old['status'])
+            approval_id = None
+            if definition.get('requires_approval'):
+                approval_id, approved = self.service.tool_approvals.prepare(c, task, slot, arguments, adapter_context, binding_digest)
+                if not approved:
+                    return dict(status=AWAITING_APPROVAL, approval_id=approval_id)
             count = c.execute('SELECT COUNT(*) FROM tool_invocations WHERE attempt_id=%s',(task['attempt_id'],)).fetchone()[0]
             if count >= ctx['snapshot']['executor']['limits']['tool_steps']:
                 raise ValueError('Agent tool 步骤达到上限，未提交交付')
@@ -207,6 +217,8 @@ class ToolRuntime:
                  definition['version'],adapter_context.binding['implementation_version'],binding_digest,adapter_context.provider['id'],
                  adapter_context.binding['type'],definition['effect'],idempotency_key,args_digest,request_id,now()))
             self.db.event(c,project['id'],task['id'],'tool.invocation_started',tool_call_id=call_id,logical_tool=slot,request_id=request_id)
+            if approval_id:
+                c.execute('UPDATE tool_approvals SET tool_call_id=%s WHERE id=%s', (call_id, approval_id))
         call = dict(id=call_id,project_id=project['id'],task_id=task['id'],attempt_id=task['attempt_id'],
             request_id=request_id,args_digest=args_digest,binding_digest=binding_digest,_arguments=deepcopy(arguments))
         adapter = self.registry.resolve(adapter_context.binding)

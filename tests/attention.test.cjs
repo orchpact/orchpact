@@ -21,6 +21,10 @@ test('只有当前、需要独立验收且未通过的产物进入待办',()=>{
  const tasks=[{id:'review',status:'completed',review:'pending',artifact_id:'a',requires_independent_review:true},{id:'accepted',status:'completed',review:'accepted',artifact_id:'b',requires_independent_review:true},{id:'retired',status:'completed',review:'pending',artifact_id:'c',requires_independent_review:true,required:false}];
  assert.deepEqual(items({projects:[project({tasks})]}).map(x=>x.reference),['review']);
 });
+test('仅待审批的外部写操作进入待办',()=>{
+ const tool_approvals=[{id:'write',status:'pending'},{id:'old',status:'stale'},{id:'sent',status:'used'}];
+ assert.deepEqual(items({projects:[project({tool_approvals})]}).map(x=>[x.kind,x.reference]),[['approval','write']]);
+});
 test('问题与异常保留项目上下文，分类不修改快照',()=>{
  const state={projects:[project({status:'partial',questions:[{id:'q'}]})]},before=JSON.stringify(state);
  const result=items(state);

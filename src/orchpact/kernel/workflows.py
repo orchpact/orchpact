@@ -96,9 +96,12 @@ def validate_definition(value):
                 fields(node, {'key','kind','parent','unit','staff','participants','tool_ref','arguments','artifact_outputs','verification','description','expected','depends_on','outputs','rules','exports','gate','repair_from'}, '工作流节点')
                 if node.get('staff') is not None:fields(node['staff'], STAFF, '节点角色')
     declared_tools = set(resources.get('tools', {}))
+    approved_tools = {key for key, tool in resources.get('tools', {}).items() if tool.get('requires_approval')}
     for site, capabilities in model_sites(value):
         if not isinstance(capabilities,list) or any(not isinstance(cap,str) for cap in capabilities):raise ValueError('角色能力必须为列表')
         granted = {cap[5:] for cap in capabilities if cap.startswith('tool:')}
+        if granted & approved_tools:
+            raise ValueError('需要事前审批的工具只允许确定性工具节点调用')
         if any(not re.fullmatch(r'tool:[A-Za-z][A-Za-z0-9_-]{0,63}',cap) for cap in capabilities if cap.startswith('tool:')) or not granted <= declared_tools:
             raise ValueError('角色引用了未声明或无效的工具槽位')
         required = model_capabilities(capabilities)

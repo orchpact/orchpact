@@ -10,7 +10,7 @@ Suggested pronunciation (US): **/ˈɔːrk.pækt/** — **ORK-pakt**, with stress
 
 **Orchpact is an open-source, self-hosted, contract-driven agent workflow service. CrewAI executes collaboration within teams; the platform manages artifacts, verification evidence, and acceptance.** Authors declare teams, roles, dependencies, resource requirements, delivery contracts, and acceptance rules. Consumers install those definitions in their own Workspaces, bind local model resources, and start independent runs.
 
-Fixed execution plans and explicit delivery contracts are the recommended entry point. Assurance is limited to the declared checks and recorded evidence; structurally valid output without business verification does not establish factual correctness. Autonomous planning, recruitment, and dynamic delegation remain experimental. Organization structures, templates, and components support delivery rather than a general application-hosting or operations platform.
+Direct execution requires a fixed plan by default. Autonomous planning, recruitment, and dynamic delegation require an explicit instance opt-in. For external writes that require human approval, declare `requires_approval: true` and use a deterministic tool node. A Workspace owner or administrator reviews the exact tool target and arguments before dispatch. Delivery assurance is limited to the declared checks and recorded evidence. See the [workflow protocol](docs/WORKFLOWS.md).
 
 A workflow is a shareable asset with explicit version references. Different people, teams, and applications can use the same definition, while the service enforces access boundaries around accounts, model credentials, inputs, runs, artifacts, and accounting.
 
