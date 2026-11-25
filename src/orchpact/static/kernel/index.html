@@ -1,8 +1,32 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Orchpact · 工作流内核</title><link rel="icon" href="/static/favicon.svg"><link rel="stylesheet" href="/static/kernel/style.css"></head>
-<body><header><a class="brand" href="/admin/">Orchpact <small>序契 · 契约、证据与交付验收</small></a><div><select id="workspace" aria-label="当前工作空间"></select><a href="/account/">账号与积分</a><a href="/api/docs">API</a><button id="refresh">刷新</button><button id="logout">退出</button></div></header>
-<div class="layout"><nav aria-label="管理导航"><a href="#overview">工作总览</a><a href="#workflows">工作流目录</a><a href="#projects">执行与交付</a><a href="#attention">待处理</a><a href="#providers">提供者配置</a><details id="advanced-navigation"><summary>高级管理</summary><a href="#organizations">组织与角色</a><a href="#policies">治理规则</a><a href="/account/">账号与工作空间 ↗</a></details></nav><main><div id="notice" role="status" aria-live="polite"></div><section id="content" aria-live="polite"></section></main></div>
-<dialog id="editor"><form id="edit-form"><div class="dialog-head"><h2 id="edit-title"></h2><button id="close-editor" type="button" aria-label="关闭">×</button></div><p id="edit-help"></p><label for="edit-json">JSON 配置</label><textarea id="edit-json" rows="18" spellcheck="false" required></textarea><p id="edit-error" role="alert"></p><button id="save-editor" type="submit">保存</button></form></dialog>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>管理后台 · Orchpact</title><link rel="icon" href="/static/favicon.svg"><link rel="stylesheet" href="/static/kernel/style.css"></head>
+<body>
+<a class="skip-link" href="#console-main">跳到主要内容</a>
+<header class="console-bar glass">
+  <a class="brand" href="/admin/"><img src="/static/brand/orchpact-icon.svg" width="36" height="36" alt=""><span>Orchpact <small>管理后台</small></span></a>
+  <label class="workspace-control"><span>当前空间</span><select id="workspace" aria-label="当前工作空间"></select></label>
+  <div class="toolbar">
+    <a href="/account/">账号与积分</a><a href="/api/docs">API</a>
+    <button id="refresh" type="button" aria-label="刷新当前页面" title="刷新当前页面"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.5 12a7.5 7.5 0 0 1 13-5L20 12m-.5 1a7.5 7.5 0 0 1-13 4"/></svg></button>
+    <button id="logout" type="button">退出</button>
+  </div>
+</header>
+<div class="layout">
+  <nav class="console-nav glass" aria-label="管理导航">
+    <a href="#overview"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg><span>工作总览</span></a>
+    <a href="#workflows"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="5" rx="1.4"/><rect x="3" y="16" width="6" height="5" rx="1.4"/><rect x="15" y="16" width="6" height="5" rx="1.4"/><path d="M12 8v4m-6 4v-4h12v4"/></svg><span>工作流目录</span></a>
+    <a href="#projects"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg><span>执行与交付</span></a>
+    <a href="#attention"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13 6 6h12l2 7v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5h4l2 3h4l2-3h4"/></svg><span>待处理</span></a>
+    <details id="advanced-navigation">
+      <summary><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span class="nav-desktop">管理设置</span><span class="nav-mobile">更多</span></summary>
+      <div class="settings-menu">
+        <a href="#providers">提供者配置</a><a href="#organizations">组织与角色</a><a href="#policies">治理规则</a>
+      </div>
+    </details>
+  </nav>
+  <main id="console-main" tabindex="-1"><div id="notice" role="status" aria-live="polite"></div><section id="content" aria-live="polite"></section></main>
+</div>
+<dialog id="editor" aria-labelledby="edit-title"><form id="edit-form"><div class="dialog-head"><h2 id="edit-title"></h2><button id="close-editor" type="button" aria-label="关闭">×</button></div><p id="edit-help"></p><label for="edit-json">JSON 配置</label><textarea id="edit-json" rows="18" spellcheck="false" required></textarea><p id="edit-error" role="alert"></p><div class="actions"><button id="save-editor" class="primary" type="submit">保存</button></div></form></dialog>
 <dialog id="organization-editor" aria-labelledby="organization-title">
   <form>
     <div class="organization-dialog-head dialog-head">

@@ -1,1 +1,31 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>验证管理凭据 · Orchpact</title><link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/account/style.css"></head><body><header><a class="wordmark" href="/"><img src="/static/account/orchpact-logo.svg" alt="Orchpact" width="127" height="30"></a><span>AUTHENTICATION REQUIRED</span></header><main><section class="intro"><p class="eyebrow">MANAGEMENT ACCESS</p><h1>管理入口，<br>先验证身份。</h1><p>组织配置、执行调试与问题查看<br>仅供持有管理凭据的操作者使用。</p><div class="principle"><span>本机与公网使用相同验证规则</span><span>凭据不会保存到浏览器存储</span></div></section><section class="paper"><p class="eyebrow">ORCHPACT_API_TOKEN</p><h2>验证管理凭据</h2><form id="admin-login"><label>API Token<input name="token" type="password" required autocomplete="off" maxlength="4096" autofocus></label><p class="note">请输入服务器配置的 ORCHPACT_API_TOKEN。验证通过后建立12小时管理会话。</p><button type="submit" class="primary">验证并进入 ↗</button><p id="login-error" class="warning" role="alert"></p></form><a href="/account/" class="note">个人账号与工作空间 →</a></section></main><footer>Orchpact · 组织执行与管理</footer><script src="/static/admin-login.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>管理登录 · Orchpact</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/kernel/style.css">
+</head>
+<body class="login-page">
+  <header class="console-bar glass">
+    <a class="brand" href="/"><img src="/static/brand/orchpact-icon.svg" width="36" height="36" alt=""><span>Orchpact</span></a>
+    <a class="action-link" href="/account/">个人账号 ↗</a>
+  </header>
+  <main class="login-main">
+    <section class="login-surface" aria-labelledby="login-title">
+      <img src="/static/brand/orchpact-icon.svg" width="66" height="66" alt="">
+      <h1 id="login-title">管理登录</h1>
+      <p class="muted">验证管理凭据后，即可进入 Orchpact 后台。</p>
+      <form id="admin-login">
+        <label for="admin-token">API Token</label>
+        <input id="admin-token" name="token" type="password" required autocomplete="off" maxlength="4096" aria-describedby="login-hint">
+        <p id="login-hint" class="muted">对应服务器配置中的 <code>ORCHPACT_API_TOKEN</code>。登录后会话有效期为 12 小时。</p>
+        <button type="submit" class="primary">验证并进入</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+  </main>
+  <script src="/static/admin-login.js"></script>
+</body>
+</html>

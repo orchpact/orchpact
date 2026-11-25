@@ -52,8 +52,7 @@ $('#edit-form').onsubmit=async event=>{event.preventDefault();const button=$('#s
 async function render(){
  const token=++revision;pageController?.abort();pageController=new AbortController();const signal=pageController.signal;
  const hash=location.hash.slice(1)||'overview', [page,id]=hash.split('/');
- if(['organizations','policies'].includes(page))$('#advanced-navigation').open=true;
- for(const a of document.querySelectorAll('nav a'))a.setAttribute('aria-current',a.hash==='#'+page?'page':'false');
+ updateNavigation(page);
  content.innerHTML='<p class="muted">正在读取…</p>';
  const current=()=>token===revision&&!signal.aborted;
  try{
@@ -111,8 +110,37 @@ async function render(){
    for(const b of content.querySelectorAll('[data-retry]'))b.onclick=async()=>{try{b.disabled=true;await api('work-items/'+b.dataset.retry+'/retry',{method:'POST',value:{},headers:{'Idempotency-Key':crypto.randomUUID()}});await render();}catch(e){tell(e.message,true);}finally{b.disabled=false;}};
    for(const b of content.querySelectorAll('[data-review]'))b.onclick=async()=>{try{const t=run.tasks.find(t=>t.id===b.dataset.review),meta=await api('artifacts/'+t.artifact_id);edit('验收具体产物版本',{artifact_id:t.artifact_id,sha256:meta.sha256,verdict:'accept',feedback:''},'填写实际核验依据。返工后的产物须重新验收。',(value,key)=>api('runs/'+id+'/commands',{method:'POST',value:{key,action:'review',payload:value}}));}catch(e){tell(e.message,true);}};return;
   }
-  content.innerHTML=heading(page==='projects'?'项目执行':'工作总览','每份成果都有来源，每个行动都有权限，每次调用都有记录。')+`<div class="cards"><div class="card"><div class="number">${state.units.length}</div><small>当前空间组织</small></div><a class="card" href="#attention"><div class="number">${attention.length}</div><small>最近项目待处理事项 →</small></a><div class="card"><div class="number">${state.projects.length}</div><small>最近项目</small></div><div class="card"><div class="number">${state.projects.filter(p=>['running','queued','waiting'].includes(p.status)).length}</div><small>执行中或等待决定</small></div></div>`+(state.projects.length?`<div class="table-scroll panel"><table><thead><tr><th>项目</th><th>状态</th><th>进度</th><th>用量</th></tr></thead><tbody>${state.projects.map(p=>`<tr><td><a href="#projects/${esc(p.id)}">${esc(p.workflow?.id||p.application_id||'历史执行')} · ${esc(p.operation)}</a></td><td>${esc(names[p.status]||p.status)}</td><td>${p.tasks.filter(t=>t.status==='completed').length}/${p.tasks.length}</td><td>${p.usage.points} 积分${p.usage.complete?'':'（用量未完整）'}</td></tr>`).join('')}</tbody></table></div>`:empty('尚无项目。先配置提供者与额度，再登记工作流并预览安装。'));
+  const overview=page!=='projects';
+  const counts=overview?`<div class="cards" aria-label="当前空间概况"><div class="card"><div class="number">${state.units.length}</div><small>当前空间组织</small></div><a class="card" href="#attention"><div class="number">${attention.length}</div><small>待处理事项 →</small></a><a class="card" href="#projects"><div class="number">${state.projects.length}</div><small>最近项目 →</small></a><div class="card"><div class="number">${state.projects.filter(p=>['running','queued','waiting'].includes(p.status)).length}</div><small>执行中或等待决定</small></div></div><h2 class="recent-heading">最近项目</h2>`:'';
+  const projects=state.projects.length?`<div class="table-scroll panel"><table><thead><tr><th>项目</th><th>状态</th><th>进度</th><th>用量</th></tr></thead><tbody>${state.projects.map(p=>`<tr><td><a href="#projects/${esc(p.id)}">${esc(p.workflow?.id||p.application_id||'历史执行')} · ${esc(p.operation)}</a></td><td>${esc(names[p.status]||p.status)}</td><td>${p.tasks.filter(t=>t.status==='completed').length}/${p.tasks.length}</td><td>${p.usage.points} 积分${p.usage.complete?'':'（用量未完整）'}</td></tr>`).join('')}</tbody></table></div>`:'<section class="panel"><p class="muted">当前空间还没有执行记录。</p><a class="action-link" href="#workflows">打开工作流目录 →</a></section>';
+  content.innerHTML=heading(overview?'工作总览':'执行与交付',overview?'查看当前空间的执行进度和待处理事项。':'查看当前空间的项目状态、用量与交付记录。')+counts+projects;
  }catch(error){if(error.name==='AbortError'||!current())return;content.innerHTML=empty(error.message);tell(error.message,true);}
 }
-$('#refresh').onclick=()=>render();$('#workspace').onchange=()=>{sessionStorage.setItem('orchpact.admin.workspace',$('#workspace').value);render();};$('#logout').onclick=async()=>{await api('session',{method:'DELETE'});location.assign('/admin/');};window.addEventListener('hashchange',()=>render());
+const main=$('#console-main'), settingsMenu=$('#advanced-navigation');
+const compactNav=window.matchMedia('(max-width: 850px)');
+const settingsSummary=settingsMenu.querySelector('summary');
+settingsMenu.open=!compactNav.matches;
+compactNav.addEventListener('change',event=>{settingsMenu.open=!event.matches;});
+function updateNavigation(page){
+ const settingsPage=['providers','organizations','policies'].includes(page);
+ settingsSummary.toggleAttribute('data-current',settingsPage);
+ if(settingsPage&&!compactNav.matches)settingsMenu.open=true;
+ for(const link of document.querySelectorAll('.console-nav a')){
+  if(link.hash==='#'+page)link.setAttribute('aria-current','page');
+  else link.removeAttribute('aria-current');
+ }
+}
+$('.skip-link').addEventListener('click',event=>{event.preventDefault();main.focus();});
+settingsMenu.addEventListener('click',event=>{
+ if(compactNav.matches&&event.target.closest('a')){settingsMenu.open=false;main.focus();}
+});
+document.addEventListener('click',event=>{
+ if(compactNav.matches&&settingsMenu.open&&!settingsMenu.contains(event.target))settingsMenu.open=false;
+});
+document.addEventListener('keydown',event=>{
+ if(event.key==='Escape'&&compactNav.matches&&settingsMenu.open){
+  settingsMenu.open=false;settingsSummary.focus();
+ }
+});
+$('#refresh').onclick=()=>render();$('#workspace').onchange=()=>{sessionStorage.setItem('orchpact.admin.workspace',$('#workspace').value);render();};$('#logout').onclick=async()=>{await api('session',{method:'DELETE'});location.assign('/admin/');};window.addEventListener('hashchange',()=>{window.scrollTo(0,0);render();});
 (async()=>{try{me=await api('auth/me');$('#workspace').innerHTML=me.workspaces.map(w=>`<option value="${esc(w.id)}">${esc(w.name)}</option>`).join('');const saved=sessionStorage.getItem('orchpact.admin.workspace');$('#workspace').value=me.workspaces.some(w=>w.id===saved)?saved:me.workspace_id;await render();}catch(e){tell(e.message,true);}})();
