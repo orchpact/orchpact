@@ -61,22 +61,43 @@ def smoke(output):
             root = Path(directory)
             # This environment never reads a business instance or inherited provider credentials.
             env = {k: v for k, v in os.environ.items() if not k.startswith(('ORCHPACT_', 'DEEPSEEK_', 'OPENAI_', 'ANTHROPIC_'))}
-            env.update(ORCHPACT_API_TOKEN=secrets.token_urlsafe(48), ORCHPACT_SMOKE_KEY='synthetic-not-a-provider-credential')
             cli = [str(Path(sys.executable).parent / 'orchpact'), '--root', str(root)]
             for command in ('init',):
                 subprocess.run(cli + [command], env=env, check=True, capture_output=True, timeout=45)
             assert (root / '.env').stat().st_mode & 0o777 == 0o600
-            assert 'ORCHPACT_API_TOKEN=' in (root / '.env').read_text()
+            assert 'ORCHPACT_API_TOKEN=' not in (root / '.env').read_text()
             env['ORCHPACT_DATABASE_URL'] = database_url_for(root / 'var')
             lines=(root / '.env').read_text().splitlines()
             (root / '.env').write_text('\n'.join('ORCHPACT_DATABASE_URL='+env['ORCHPACT_DATABASE_URL'] if line.startswith('ORCHPACT_DATABASE_URL=') else line for line in lines)+'\n')
-            (root / 'config/models.toml').write_text('[models.fixture]\nlabel="Synthetic local provider"\nkind="text"\nmodel="synthetic"\nbase_url="http://127.0.0.1:' + str(provider.server_port) + '/v1"\nkey_env="ORCHPACT_SMOKE_KEY"\njson_mode=true\nenabled=true\npriority=1\n')
+            (root / 'config/models.toml').write_text('[models.fixture]\nlabel="Synthetic local provider"\nkind="text"\nmodel="synthetic"\nbase_url="http://127.0.0.1:' + str(provider.server_port) + '/v1"\njson_mode=true\nenabled=true\npriority=1\n')
             subprocess.run(cli + ['check'], env=env, check=True, capture_output=True, timeout=45)
             checks.append('fresh-cli-init-check-private-credentials')
             with socket.socket() as sock:
                 sock.bind(('127.0.0.1', 0))
                 port = sock.getsockname()[1]
             url = 'http://127.0.0.1:' + str(port)
+            launcher = root / 'serve-fixture.py'
+            launcher.write_text('''from contextlib import asynccontextmanager
+from pathlib import Path
+import sys
+import uvicorn
+from orchpact.api import create_app
+from orchpact.config import Settings
+from orchpact.testing import fixture_provider_credentials
+
+settings = Settings.load(Path(sys.argv[1]),port=int(sys.argv[2]))
+app = create_app(settings)
+lifespan = app.router.lifespan_context
+
+@asynccontextmanager
+async def fixture(application):
+    async with lifespan(application):
+        fixture_provider_credentials(application.state.service,{'fixture':'synthetic-provider-key'})
+        yield
+
+app.router.lifespan_context = fixture
+uvicorn.run(app,host=settings.host,port=settings.port)
+''')
             process = None
             with (root / 'server.log').open('ab') as log:
                 def stop():
@@ -92,7 +113,7 @@ def smoke(output):
 
                 def start():
                     nonlocal process
-                    process = subprocess.Popen(cli + ['serve', '--host', '127.0.0.1', '--port', str(port)], env=env, stdout=log, stderr=log)
+                    process = subprocess.Popen([sys.executable,str(launcher),str(root),str(port)], env=env, stdout=log, stderr=log)
                     deadline = time.monotonic() + 30
                     while time.monotonic() < deadline:
                         if process.poll() is not None:
@@ -107,13 +128,17 @@ def smoke(output):
 
                 try:
                     start()
-                    with httpx.Client(base_url=url, headers={'Authorization': 'Bearer ' + env['ORCHPACT_API_TOKEN']}, trust_env=False, timeout=15) as admin, httpx.Client(base_url=url, trust_env=False, timeout=15) as app:
+                    with httpx.Client(base_url=url, trust_env=False, timeout=15) as admin, httpx.Client(base_url=url, trust_env=False, timeout=15) as app:
                         def api(method, path, **kwargs):
                             response = admin.request(method, '/api/v1' + path, **kwargs)
                             response.raise_for_status()
                             return response.json()
 
+                        credentials = dict(username='smoke-owner',password=secrets.token_urlsafe(48))
+                        api('POST','/auth/setup',json=credentials)
                         me = api('GET', '/auth/me')
+                        assert me['admin']
+                        checks.append('first-account-is-instance-administrator')
                         api('POST', '/admin/users/' + me['user_id'] + '/credits', json=dict(delta=1000, reason='synthetic release smoke'), headers={'Idempotency-Key': 'smoke-budget'})
                         definition = json.loads((ROOT / 'examples/workflows/department-review.json').read_text())
                         asset = api('POST', '/workflows', json=definition)

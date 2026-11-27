@@ -1,5 +1,5 @@
-from orchpact.testing import database_url_for
-from account_fixtures import create_user, register_package
+from orchpact.testing import database_url_for, fixture_provider_credentials
+from account_fixtures import bootstrap_admin, create_user, register_package
 """Cross-account authorization, collaboration and public-mode regression tests."""
 from dataclasses import replace
 from pathlib import Path
@@ -13,7 +13,6 @@ from orchpact.config import Settings
 from orchpact.access import password_hash, digest
 from orchpact.db import now
 
-TOKEN='admin-test-token-'*3
 PASSWORD='test-password-1234'
 
 class WorkspaceTests(unittest.TestCase):
@@ -23,11 +22,12 @@ class WorkspaceTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();root=Path(self.tmp.name)
         p=dict(id='text',label='Text',kind='text',model='test',base_url='https://example.invalid/v1',key_env='TEST_KEY',capabilities=['text','json'],priority=1,json_mode=True)
-        self.settings=Settings(root,TOKEN,{'text':p},root/'var',public_origin='https://test.example',database_url=database_url_for(root/'var'))
+        self.settings=Settings(root,{'text':p},root/'var',public_origin='https://test.example',database_url=database_url_for(root/'var'))
         self.app=create_app(self.settings,run_worker=False)
         self.admin=TestClient(self.app,base_url='https://test.example').__enter__()
-        self.admin.headers['Authorization']='Bearer '+TOKEN
         self.s=self.app.state.service
+        fixture_provider_credentials(self.s,default_model='workspace-provider-key')
+        bootstrap_admin(self.s,self.admin)
         register_package(self.admin)
         self.clients=[]
         self.alice=self.user('alice');self.bob=self.user('bob');self.cara=self.user('cara')
@@ -252,11 +252,26 @@ class WorkspaceTests(unittest.TestCase):
         del self.alice.headers['X-Workspace-Id']
         self.assertEqual(self.alice.post('/api/v1/apps/demo/runs',json=payload,headers={'Idempotency-Key':'ref'}).status_code,201)
 
+    def test_instance_home_routes_to_admin_and_project_information_routes_to_website(self):
+        for method in ('GET', 'HEAD'):
+            home=self.alice.request(method, '/', follow_redirects=False)
+            self.assertEqual(home.status_code,303)
+            self.assertEqual(home.headers['location'],'/admin/')
+            for path in ('/about', '/about/'):
+                response=self.alice.request(method,path,follow_redirects=False)
+                self.assertEqual(response.status_code,303)
+                self.assertEqual(response.headers['location'],'https://orchpact.github.io/')
+        self.assertEqual(self.alice.get('/static/showcase/index.html').status_code,404)
+        login=TestClient(self.app,base_url='https://test.example').get('/')
+        self.assertIn('id="login-form"',login.text)
+        self.assertIn('name="username"',login.text)
+        self.assertIn('href="https://orchpact.github.io/docs/"',login.text)
+        self.assertEqual(self.alice.get('/static/account/entry.css').status_code,200)
+
     def test_public_admin_pages_and_auth_context_isolation(self):
-        login=self.alice.get('/admin/')
-        self.assertEqual(login.status_code,200)
-        self.assertIn('验证管理凭据',login.text)
-        self.assertNotIn('id="projects"',login.text)
+        login=self.alice.get('/admin/',follow_redirects=False)
+        self.assertEqual(login.status_code,303)
+        self.assertEqual(login.headers['location'],'/workspace/')
         for path in ('/api/docs','/api/v1/openapi.json'):
             self.assertEqual(self.alice.get(path).status_code,403,path)
             self.assertEqual(self.admin.get(path).status_code,200,path)

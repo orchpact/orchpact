@@ -38,7 +38,7 @@ class ImageProviders(unittest.TestCase):
   for items in [[{'url':'https://internal.invalid'}],[{'b64_json':'bad'}],[{'b64_json':base64.b64encode(b'not-image').decode()}],[{'b64_json':RAW},{'b64_json':RAW}]]:
    self.client.post.return_value=response({'data':items})
    with self.assertRaises((ValueError,TypeError)):generate(self.client,self.profile('seedream'),'secret',REQ,[])
- def test_config_auto_enable_and_no_key_leak(self):
+ def test_environment_does_not_enable_images_and_admin_configuration_does(self):
   with tempfile.TemporaryDirectory() as temp:
    root=Path(temp);database_url_for(root/'var');(root/'config').mkdir();(root/'config/models.toml').write_text('''[models.text]
 kind="text"
@@ -54,8 +54,19 @@ base_url="https://example.invalid/v1beta"
 key_env="GEMINI_TEST_KEY"
 enabled="auto"
 ''')
-   with patch.dict(os.environ,{'ORCHPACT_API_TOKEN':'test-secret-'*4,'TEXT_KEY':'text-secret'},clear=True):
-    settings=Settings.load(root);self.assertEqual(len(settings.profiles),1);self.assertEqual(settings.image_catalog()[0]['status'],'missing_credentials')
-   with patch.dict(os.environ,{'ORCHPACT_API_TOKEN':'test-secret-'*4,'TEXT_KEY':'text-secret','GEMINI_TEST_KEY':'image-secret'},clear=True):
-    settings=Settings.load(root);self.assertEqual(settings.choose(['image_reference'])['id'],'picture');self.assertNotIn('image-secret',json.dumps(settings.catalog()));self.assertNotIn('image-secret',json.dumps(settings.image_catalog()))
+   from orchpact.bootstrap import Instance
+   with patch.dict(os.environ,{'TEXT_KEY':'text-secret','GEMINI_TEST_KEY':'image-secret'},clear=True):
+    instance=Instance(Settings.load(root)).open()
+    try:
+     settings=instance.service.settings
+     self.assertEqual(settings.catalog(),[])
+     self.assertEqual(settings.image_catalog()[0]['status'],'missing_credentials')
+     config=instance.service.configuration
+     body=config.public()
+     picture=next(row for row in body['value']['providers'] if row['id']=='picture')
+     picture['secret']='fixture-image-secret'
+     config.save(body['revision'],body['value'],'fixture')
+     self.assertEqual(settings.choose(['image_reference'])['id'],'picture')
+     self.assertNotIn('fixture-image-secret',json.dumps(settings.image_catalog()))
+    finally:instance.close()
 if __name__=='__main__':unittest.main()

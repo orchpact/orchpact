@@ -7,3 +7,7 @@ Swagger UI Dist 5.34.0 is vendored in `src/orchpact/static/vendor/` for local AP
 Python dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Binary wheels, the Python/PostgreSQL base images and OS packages carry additional upstream licenses and notices; preserve those when redistributing an image. Dependency metadata is not a complete image SBOM.
 
 CrewAI is used as an installed dependency under its MIT license, with the resolved version recorded in uv.lock. No CrewAI source is copied into this repository. Its transitive packages retain their respective upstream licenses; the Orchpact MIT license does not replace them.
+
+## Browser UI
+
+The React components in `frontend/src/components/ui/` are adapted from the [shadcn/ui New York registry](https://ui.shadcn.com/r/styles/new-york-v4/button.json). The [MIT license](frontend/LICENSE-shadcn.txt) accompanies the component sources. npm integrity hashes and exact versions are in `frontend/package-lock.json`. The offline browser distribution includes [dependency notices](src/orchpact/static/ui/LICENSES.txt). The [wordmark license](src/orchpact/static/brand/LICENSE-wordmark.txt) accompanies the identity kit.

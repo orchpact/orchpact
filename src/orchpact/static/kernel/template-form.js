@@ -63,7 +63,8 @@
  function showError(root,message){
   for(const item of root.querySelectorAll('[data-path]'))item.removeAttribute('aria-invalid');
   for(const item of root.querySelectorAll('[data-error-for]'))item.textContent='';
-  const path=errorPath(message),input=path&&control(root,path),target=path&&root.querySelector('[data-error-for="'+path+'"]');
+  const path=errorPath(message),input=path&&control(root,path);
+  const target=path&&[...root.querySelectorAll('[data-error-for]')].find(item=>item.dataset.errorFor===path);
   if(input)input.setAttribute('aria-invalid','true');
   if(target)target.textContent=message;
   return path;
@@ -104,10 +105,10 @@
   const files=[...Object.keys(node.outputs||{}),...Object.keys(node.artifact_outputs||{})];
   return '<li><strong>'+esc(node.key)+'</strong> <span class="badge">'+esc(node.kind||'agent')+'</span><br><small>依赖 '+esc((node.depends_on||[]).join(' → ')||'无')+' · 文件 '+esc(files.join('、')||node.exports?.join('、')||'无')+'</small></li>';
  }
- function previewHtml(result){
+ function previewHtml(result,{publish=true}={}){
   const definition=result.definition;
   const operations=Object.entries(definition.operations||{}).map(([name,operation])=>'<article class="template-operation"><h3>'+esc(name)+'</h3><p>'+esc(operation.instruction)+'</p><small>交付 '+esc(operation.output_file||'未声明')+'</small>'+(operation.execution_plan?'<ol>'+operation.execution_plan.nodes.map(nodeSummary).join('')+'</ol>':'<p class="muted">动态操作，没有预声明固定节点；运行仍使用现有工作项快照。</p>')+'</article>').join('');
-  return '<div class="template-preview"><p><strong>定义 SHA-256</strong><br><code>'+esc(result.sha256)+'</code></p>'+operations+'<details><summary>查看完整规范 JSON</summary><pre>'+esc(JSON.stringify(definition,null,2))+'</pre></details><button type="button" class="primary" data-publish-template>使用此定义登记</button></div>';
+  return '<div class="template-preview"><p><strong>定义 SHA-256</strong><br><code>'+esc(result.sha256)+'</code></p>'+operations+'<details><summary>查看完整规范 JSON</summary><pre>'+esc(JSON.stringify(definition,null,2))+'</pre></details>'+(publish?'<button type="button" class="primary" data-publish-template>在画布中打开</button>':'')+'</div>';
  }
  function mount(root,templates,{preview,publish,current=()=>true}){
   let selected=templates[0],saved=null,generation=0;

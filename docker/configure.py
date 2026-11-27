@@ -9,7 +9,7 @@ def configure(destination):
     path=Path(destination)
     descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     with os.fdopen(descriptor,'w') as stream:
-        for key in ('POSTGRES_ADMIN_PASSWORD','ORCHPACT_DB_PASSWORD','ORCHPACT_API_TOKEN'):
+        for key in ('POSTGRES_ADMIN_PASSWORD','ORCHPACT_DB_PASSWORD'):
             stream.write(key+'='+secrets.token_urlsafe(48)+'\n')
         stream.write('ORCHPACT_PORT=8780\n')
     return path

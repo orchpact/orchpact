@@ -6,6 +6,13 @@
 !LICENSE
 !src/
 !src/**
+!examples/
+!examples/fulfillment/
+!examples/fulfillment/input.json
+!examples/fulfillment/workflow.json
+!examples/mystery-story/
+!examples/mystery-story/input.json
+!examples/mystery-story/workflow.json
 !docker/
 !docker/entrypoint.py
 **/__pycache__/

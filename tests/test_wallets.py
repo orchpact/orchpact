@@ -1,5 +1,5 @@
-from orchpact.testing import database_url_for
-from account_fixtures import create_user, register_package
+from orchpact.testing import database_url_for, fixture_provider_credentials
+from account_fixtures import bootstrap_admin, create_user, register_package
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import json
@@ -24,9 +24,10 @@ class WalletTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();root=Path(self.tmp.name)
         profile=dict(id='text',kind='text',model='test',key_env='TEST_KEY',base_url='https://example.invalid',capabilities=['text','json','search'])
-        self.settings=Settings(root,'wallet-admin-test-'*3,{'text':profile},root/'var',database_url=database_url_for(root/'var'))
+        self.settings=Settings(root,{'text':profile},root/'var',database_url=database_url_for(root/'var'))
         self.app=create_app(self.settings,run_worker=False)
-        self.admin=TestClient(self.app).__enter__();self.s=self.app.state.service;self.admin.headers['Authorization']='Bearer '+self.settings.token
+        self.admin=TestClient(self.app).__enter__();self.s=self.app.state.service;self.admin_actor=bootstrap_admin(self.s,self.admin)
+        fixture_provider_credentials(self.s,default_model='wallet-provider-key',search={'search:tavily':'fixture-search-key'})
         register_package(self.admin)
         self.clients=[];self.alice=self.user('alice');self.bob=self.user('bob')
 

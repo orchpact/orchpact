@@ -21,7 +21,7 @@ from orchpact.kernel.errors import Forbidden
 from orchpact.kernel.models import ExecutionContext
 from orchpact.services.tools import ToolRuntime
 from orchpact.testing import database_url_for
-from verify import check_story, check_editor_facts
+from orchpact.scenarios.mystery import check_story, initial, StoryVerifier
 
 HERE=Path(__file__).resolve().parent
 HttpClient=httpx.Client
@@ -30,69 +30,18 @@ CASES=['await-human','repair-knowledge','repair-branch','repair-editor','reject-
 EDITOR_DEFECT='E2.text: 周馆长被误写成守夜人；修正人物身份，与 canon 保持一致。'
 
 
-def initial(canon,stage):
-    if stage=='canon':return dict(canon=deepcopy(canon))
-    if stage=='style':return dict(rubric=deepcopy(canon['editorial_rubric']))
-    return {key:deepcopy(canon[key]) for key in ('scene_slots','transitions','entry','endings')}
-
-
-class StoryVerifier:
-    def __init__(self,service):self.s=service
-
-    def invoke(self,context):
-        stage=context.arguments['parameters']['stage'];ref=context.arguments['artifact']
-        with self.s.db.connect() as c:
-            artifact=self.s.row(c,'artifacts',ref['artifact_id']);task=self.s.row(c,'tasks',artifact['task_id'])
-            canon=loads(c.execute('SELECT input FROM invocations WHERE id=%s',(artifact['project_id'],)).fetchone()[0])
-            human_required=any(row['policy']['independent_review'] for row in loads(task['snapshot']).get('policies',[]))
-            if loads(task['definition']).get('root'):
-                task=dict(c.execute("SELECT * FROM tasks WHERE project_id=%s AND node_key='release'",(artifact['project_id'],)).fetchone())
-            dependencies=[dict(row) for row in c.execute('SELECT t.* FROM dependencies d JOIN tasks t ON t.id=d.depends_on WHERE d.task_id=%s',(task['id'],))]
-            docs={row['node_key']:json.loads(self.s.artifacts.read_files(self.s.row(c,'artifacts',row['artifact_id']))[0]['data']) for row in dependencies}
-        if artifact['sha256']!=ref['sha256']:raise ValueError('Candidate digest mismatch')
-        value=json.loads(self.s.artifacts.read_files(artifact)[0]['data']);status='PASS';issues=[];method='declared_state_rules'
-        if stage in ('canon','structure','style'):
-            if value!=initial(canon,stage):issues=[dict(code='changed_commission',path=stage,message='Preserve the frozen commission and rubric')]
-        elif stage=='draft':
-            result=check_story(canon,value);status=result['status'];issues=result['violations']
-        elif stage=='editor':
-            method='model_assessment_and_reference_binding'
-            if set(value['reviewed_artifact_ids'])!={row['artifact_id'] for row in dependencies}:issues=[dict(code='stale_editor_review',path='reviewed_artifact_ids',message='Review must cite current dependency versions')]
-            else:
-                facts=check_editor_facts(canon,docs['draft'],value);status=facts['status'];issues=facts['violations']
-                if value['decision']=='INCONCLUSIVE' and not issues:status='INCONCLUSIVE'
-                elif value['decision']!='APPROVE' or value['issues']:
-                    issues.extend(dict(code='editor_rejected',path='issues['+str(index)+']',message=message) for index,message in enumerate(value['issues']))
-                    if not issues:issues=[dict(code='editor_rejected',path='decision',message='Independent editor rejected the manuscript without an issue description')]
-        elif stage=='release':
-            result=check_story(canon,value['story']);status=result['status'];issues=list(result['violations'])
-            if value['story']!=docs['draft']:issues.append(dict(code='changed_reviewed_story',path='story',message='Publication candidate changed the reviewed draft'))
-            if docs['editor']['decision']!='APPROVE' or set(value['dependency_artifact_ids'])!={row['artifact_id'] for row in dependencies}:issues.append(dict(code='release_review',path='dependency_artifact_ids',message='Publication must bind the current approved draft and editor report'))
-            if not human_required and not issues:status='INCONCLUSIVE'
-        else:raise ValueError('Unknown stage')
-        if issues:status='FAIL'
-        code=issues[0]['code'] if issues else 'human_policy_missing' if stage=='release' and not human_required else 'editor_uncertain' if status=='INCONCLUSIVE' else 'declared_checks_passed'
-        target='editor' if code in ('stale_editor_review','editor_fact_coverage','editor_fact_binding') else 'draft'
-        return dict(status=status,checks=[dict(check_id=stage,status=status,code=code,node_key=target if stage=='editor' else stage,
-            field_path=issues[0]['path'] if issues else None,message='; '.join(row['path']+': '+row['message'] for row in issues)[:4000] or code,
-            repair='Fix the manuscript and declarations together. Do not lower the commission or claim unverified prose quality.')],
-            evidence=dict(method=method,semantic_status='NOT_VERIFIED',human_review_required=True,violations=issues))
-
-
 def execute(case,simulate_approval=False,transport='synthetic',live_root=None,model_id=None,budget_points=1000,run_root=None):
     canon=json.loads((HERE/'input.json').read_text());definition=json.loads((HERE/'workflow.json').read_text())
-    environment={}
     if transport=='live':
-        source=Settings.load(live_root);profile=deepcopy(source.choose(['text','json'],model_id))
-        if profile.get('credential'):
-            environment['ORCHPACT_MYSTERY_LIVE_KEY']=source._configuration.secret(profile.pop('credential'));profile['key_env']='ORCHPACT_MYSTERY_LIVE_KEY'
+        source=Settings.load(live_root)
+        profile=deepcopy(source.choose(['text','json'],model_id))
+        secret=source._configuration.secret(profile.pop('credential'))
     else:
-        profile=dict(id='demo',label='Synthetic mystery writer',kind='text',model='synthetic',base_url='https://example.invalid/v1',key_env='ORCHPACT_MYSTERY_KEY',capabilities=['text','json'],priority=1,json_mode=True)
-        environment['ORCHPACT_MYSTERY_KEY']='synthetic-only'
+        profile=dict(id='demo',label='Synthetic mystery writer',kind='text',model='synthetic',
+                     base_url='https://example.invalid/v1',capabilities=['text','json'],priority=1,json_mode=True)
+        secret='synthetic-fixture-key'
     calls=Counter();preserved={}
     with ExitStack() as stack:
-        stack.enter_context(patch.dict(os.environ,environment))
-        token=secrets.token_urlsafe(48)
         if transport=='live':
             database_url=os.environ.get('ORCHPACT_SCENARIO_DATABASE_URL','')
             if not run_root or not database_url.startswith(('postgresql://','postgres://')):
@@ -108,18 +57,20 @@ def execute(case,simulate_approval=False,transport='synthetic',live_root=None,mo
             if populated:raise ValueError('Live scenario database must be empty; existing databases are never reused')
             root.mkdir(mode=0o700,parents=True)
             env=root/'.env'
-            with env.open('x') as stream:stream.write('ORCHPACT_API_TOKEN='+token+'\nORCHPACT_DATABASE_URL='+database_url+'\n')
+            with env.open('x') as stream:stream.write('ORCHPACT_DATABASE_URL='+database_url+'\n')
             env.chmod(0o600)
         else:
             directory=stack.enter_context(tempfile.TemporaryDirectory(prefix='orchpact-mystery-'));root=Path(directory)
             database_url=database_url_for(root/'var')
-        instance=Instance(Settings(root,token,{profile['id']:profile},root/'var',database_url=database_url)).open()
+        instance=Instance(Settings(root,{profile['id']:profile},root/'var',database_url=database_url)).open()
         try:
-            s=instance.service;ctx=ExecutionContext('user:'+instance.admin_user,instance.admin_workspace,user_id=instance.admin_user,admin=True)
+            s=instance.service;actor=instance.service.access.setup_admin('scenario-owner',secrets.token_urlsafe(48),offline=True)
+            ctx=ExecutionContext('user:'+actor.user_id,actor.workspace_id,user_id=actor.user_id,admin=True)
             s.access.wallets.adjust(ctx.user_id,budget_points,'Explicit isolated mystery budget','mystery-budget',ctx.user_id)
             with s.db.tx() as c:s.policies.save(c,'platform',0,dict(budget_points=budget_points))
             config=s.configuration.public();provider=deepcopy(config['value']['providers'][0])
-            provider.update(id='tool:mystery-verifier',category='tool',label='Declared narrative state verifier',adapter='builtin',base_url='',model='',key_env='',secondary_key_env='',search=False,thinking_disabled=False,image_options={},pricing=dict(unit='request',points=0,unit_size=1),
+            config['value']['providers'][0]['secret']=secret
+            provider.update(id='tool:mystery-verifier',category='tool',label='Declared narrative state verifier',adapter='builtin',base_url='',model='',search=False,thinking_disabled=False,image_options={},pricing=dict(unit='request',points=0,unit_size=1),
                 tool_interface='example.mystery.verify',tool_interface_version='1',implementation_version='1.0.0',tool_policy=dict(workspace_ids=[ctx.workspace_id],workflow_ids=[definition['id']],max_concurrency=1),
                 tool_verifier=dict(checks=STAGES,media_types=['application/json'],trust_level='trusted',environment='isolated-narrative-state-v1'))
             s.configuration.save(config['revision'],dict(config['value'],providers=config['value']['providers']+[provider]),ctx.subject)

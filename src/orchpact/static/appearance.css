@@ -1,0 +1,7 @@
+/* The visible wordmark follows the same CSS cascade as the semantic colors. */
+:root [data-wordmark="dark"], :root[data-op-theme="dark"] [data-wordmark="light"] {display:none;}
+:root[data-op-theme="dark"] [data-wordmark="dark"] {display:block;}
+@media(prefers-color-scheme:dark) {
+  :root:not([data-op-theme="light"]) [data-wordmark="dark"] {display:block;}
+  :root:not([data-op-theme="light"]) [data-wordmark="light"] {display:none;}
+}

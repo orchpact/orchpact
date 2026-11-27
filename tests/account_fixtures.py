@@ -3,6 +3,16 @@ from orchpact.access import password_hash
 from orchpact.db import ident, now
 
 
+ADMIN_USERNAME = 'fixture-owner'
+ADMIN_PASSWORD = 'fixture-owner-test-password'
+
+
+def bootstrap_admin(service,client):
+    actor = service.access.setup_admin(ADMIN_USERNAME,ADMIN_PASSWORD,offline=True)
+    client.cookies.set('orchpact_session',service.access.session(actor.user_id))
+    return actor
+
+
 def create_user(service,client,name,password,hashed=None,audience=''):
     user=ident()
     with service.db.tx() as c:

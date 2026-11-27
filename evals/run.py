@@ -2,6 +2,7 @@
 import argparse
 from copy import deepcopy
 import json
+import secrets
 from pathlib import Path
 import sys
 import tempfile
@@ -48,27 +49,26 @@ def main():
     source=Settings.load(args.root) if args.transport=='live' else None
     if source:
         profiles=deepcopy(source.active_profiles())
-        # Materialize credentials in memory for this temporary instance only.
-        # Managed secret references belong to the source root; never copy files.
-        import os
-        for index,profile in enumerate(profiles.values()):
-            if profile.get('credential'):
-                manager=source._configuration
-                env='ORCHPACT_EVAL_MODEL_'+str(index)
-                os.environ[env]=manager.secret(profile['credential'])
-                profile['key_env']=env;profile.pop('credential',None)
-    else:profiles={'fixture':dict(id='fixture',kind='text',model='synthetic',base_url='https://example.invalid',key_env='NO_REAL_CREDENTIAL',capabilities=['text','json'])}
+        credentials={key:source._configuration.secret(profile.pop('credential')) for key,profile in profiles.items()}
+    else:
+        profiles={'fixture':dict(id='fixture',kind='text',model='synthetic',base_url='https://example.invalid',capabilities=['text','json'])}
+        credentials={'fixture':'synthetic-eval-key'}
     cases=json.loads((ROOT/'evals/cases.json').read_text());rows=[]
     modes=['single','fixed','autonomous'] if args.mode=='all' else [args.mode]
     # A separate fresh instance per mode gives all modes the same finite wallet.
     for mode in modes:
         with tempfile.TemporaryDirectory(prefix='orchpact-eval-') as directory:
             path=Path(directory)
-            settings=Settings(path,'synthetic-eval-admin-'*3,profiles,path/'var',workers=1,database_url=database_url_for(path/'var'))
+            settings=Settings(path,profiles,path/'var',workers=1,database_url=database_url_for(path/'var'))
             instance=Instance(settings).open()
             try:
-                s=instance.service;ctx=ExecutionContext('user:'+instance.admin_user,instance.admin_workspace,user_id=instance.admin_user,admin=True)
-                s.access.wallets.adjust(instance.admin_user,args.budget_points,'explicit evaluation budget','eval',instance.admin_user)
+                s=instance.service;actor=instance.service.access.setup_admin('scenario-owner',secrets.token_urlsafe(48),offline=True)
+                config=s.configuration.public()
+                for row in config['value']['providers']:
+                    if row['id'] in credentials:row['secret']=credentials[row['id']]
+                s.configuration.save(config['revision'],config['value'],'evaluation')
+                ctx=ExecutionContext('user:'+actor.user_id,actor.workspace_id,user_id=actor.user_id,admin=True)
+                s.access.wallets.adjust(actor.user_id,args.budget_points,'explicit evaluation budget','eval',actor.user_id)
                 with s.db.tx() as c:s.policies.save(c,'platform',0,dict(budget_points=args.budget_points))
                 manifest=json.loads((ROOT/'examples/evidence-team.json').read_text())
                 if mode=='single':manifest['operations']['calculate']['execution_plan']['nodes']=manifest['operations']['calculate']['execution_plan']['nodes'][:1]

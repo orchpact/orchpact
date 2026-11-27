@@ -1,0 +1,4 @@
+# Preserve reproducible esbuild output, including whitespace in CSS string literals.
+src/orchpact/static/ui/*.js -text whitespace=-blank-at-eol
+# Upstream license notices retain their original line endings.
+src/orchpact/static/ui/LICENSES.txt -text whitespace=cr-at-eol

@@ -1,31 +1,30 @@
 """Workflow control plane. Startup owns the instance before any writable service."""
 from contextlib import asynccontextmanager
-from dataclasses import replace
-import hmac
 from pathlib import Path
 import re
 import secrets
 from typing import Literal
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Depends, Request, Response, HTTPException, Header, Query, Body
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
 from ..adapters.database import dumps, loads, now, ident
-from ..adapters.identity import Principal, principal
+from ..adapters.identity import principal
 from ..bootstrap import Instance
 from .. import __version__
 from ..kernel.errors import DomainError, Forbidden, NotFound
 from ..kernel.models import Strict, UnitInput, AgentInput, ImageRequest, Command, MandateInput, TemplatePreviewInput
+from ..services.workbench import Workbench
+from ..services.examples import WorkflowExamples
 from .context import from_actor
 
 STATIC = Path(__file__).resolve().parents[1] / 'static'
-
-
-class Login(Strict):
-    token: str = Field(min_length=32, max_length=200)
 
 
 class Invocation(Strict):
@@ -83,6 +82,9 @@ def create_app(settings, run_worker=True, executor=None):
     def service():
         return app.state.service
 
+    def workbench():
+        return Workbench(service())
+
     def session_audience(request):
         # Preserve existing platform sessions. Former product audiences are never
         # accepted on this single platform surface.
@@ -93,20 +95,23 @@ def create_app(settings, run_worker=True, executor=None):
         if request.headers.get('origin') not in (None, expected) or request.headers.get('sec-fetch-site') == 'cross-site':
             raise HTTPException(403, '不允许跨站请求')
 
+    def local_setup(request):
+        loopback = ('127.0.0.1','localhost','::1')
+        return (settings.local_access and settings.host in loopback
+                and request.url.hostname in loopback and request.client is not None
+                and request.client.host in ('127.0.0.1','::1')
+                and not any(name in request.headers for name in ('forwarded','x-forwarded-for','x-forwarded-host')))
+
     async def auth(request: Request, credential: HTTPAuthorizationCredentials | None = Depends(bearer)):
         if any(key.startswith('x-orchpact-') for key in request.headers):
             raise Forbidden('子应用签名接入已移除，请使用个人会话或管理员 API')
         token = credential.credentials if credential else request.cookies.get('orchpact_session', '')
-        if credential and hmac.compare_digest(token, settings.token):
-            actor = Principal(instance.admin_user, True, instance.admin_workspace)
-        else:
-            actor = service().access.authenticate(token, session_audience(request))
-            if not credential:trusted_origin(request)
+        actor = service().access.authenticate(token, session_audience(request))
+        if not credential:trusted_origin(request)
         workspace=request.headers.get('X-Workspace-Id')
         if re.fullmatch(r'/api/v1/(artifacts/[^/]+/(download|preview)|requests/[^/]+|apps/[^/]+/definition)',request.url.path):
             workspace=workspace or request.query_params.get('workspace')
         actor=service().access.scope(actor,workspace)
-        if actor.admin and not actor.workspace_id:actor=replace(actor,workspace_id=instance.admin_workspace)
         legacy=re.match(r'/api/v1/apps/([a-zA-Z0-9_-]+)',request.url.path)
         if legacy and not actor.admin:
             with service().db.connect() as c:
@@ -160,6 +165,14 @@ def create_app(settings, run_worker=True, executor=None):
             response.headers.setdefault('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         return response
 
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request, exc):
+        path = request.url.path
+        if path.startswith('/api/v1/auth/') or re.fullmatch(r'/api/v1/admin/users/[^/]+/password',path):
+            detail = [{key: error[key] for key in ('loc','msg','type')} for error in exc.errors()]
+            return JSONResponse(status_code=422, content={'detail':detail})
+        return await request_validation_exception_handler(request, exc)
+
     @app.exception_handler(DomainError)
     async def domain_error(request, exc):
         return JSONResponse(status_code=exc.status, content={'code': exc.code, 'detail': str(exc)})
@@ -177,7 +190,7 @@ def create_app(settings, run_worker=True, executor=None):
     class AccessProxy:
         def __getattr__(self, name):
             return getattr(service().access, name)
-    install_accounts(app, AccessProxy(), auth, admin, cookie, trusted_origin, session_audience,
+    install_accounts(app, AccessProxy(), auth, admin, cookie, trusted_origin, local_setup, session_audience,
                      credit_policy=lambda: service().configuration.defaults(),
                      provider_prices=lambda: [dict(id=p['id'], category=p['category'], label=p['label'], pricing=p['pricing']) for p in service().configuration.read()[1]['providers'] if service().configuration.ready(p)])
 
@@ -191,18 +204,10 @@ def create_app(settings, run_worker=True, executor=None):
         response.status_code = 200 if healthy else 503
         return dict(status='ready' if healthy else 'unavailable')
 
-    @app.post('/api/v1/session')
-    def login(data: Login, request: Request, response: Response):
-        trusted_origin(request)
-        service().access.throttle('admin:' + (request.client.host if request.client else 'unknown'))
-        if not hmac.compare_digest(data.token, settings.token):
-            raise HTTPException(401, '管理凭据无效')
-        cookie(response, request, service().access.session(instance.admin_user, admin=True, audience=session_audience(request)))
-        return dict(ok=True)
-
     @app.delete('/api/v1/session', dependencies=[Depends(auth)])
-    def logout(request: Request, response: Response):
-        service().access.revoke_session(request.cookies.get('orchpact_session', ''))
+    def logout(request: Request, response: Response, credential: HTTPAuthorizationCredentials | None=Depends(bearer)):
+        token = credential.credentials if credential else request.cookies.get('orchpact_session', '')
+        service().access.revoke_session(token)
         response.delete_cookie('orchpact_session', secure=bool(settings.public_origin), httponly=True, samesite='strict')
         return dict(ok=True)
 
@@ -225,6 +230,16 @@ def create_app(settings, run_worker=True, executor=None):
     @app.get('/api/v1/admin/configuration/history', dependencies=[Depends(admin)])
     def configuration_history():
         return service().configuration.history()
+
+    @app.get('/api/v1/admin/instance', dependencies=[Depends(admin)])
+    def instance_status():
+        runner = app.state.runner
+        with service().db.connect() as c:
+            database_version = c.execute('SHOW server_version').fetchone()[0]
+            statuses = dict(c.execute('SELECT status,count(*) FROM tasks GROUP BY status').fetchall())
+        return dict(version=__version__, database_version=database_version, worker_enabled=run_worker,
+                    ready=not run_worker or runner.healthy(), workers=sum(thread.is_alive() for thread in runner.threads),
+                    active={status: statuses.get(status, 0) for status in ('queued','running','waiting','awaiting_approval')})
 
     @app.post('/api/v1/organization-packages', deprecated=True)
     def package(data: dict, revision: int = Query(default=0, ge=0), ctx=Depends(admin)):
@@ -267,6 +282,10 @@ def create_app(settings, run_worker=True, executor=None):
         result=service().workflows.read(ctx,workflow,revision)
         return JSONResponse(result['definition'],headers={'Content-Disposition':'attachment; filename="'+result['id']+'.json"','X-Workflow-SHA256':result['sha256']})
 
+    @app.get('/api/v1/workflows/{workflow}/revisions')
+    def workflow_revisions(workflow: str,ctx=Depends(admin)):
+        return service().workflows.revisions(ctx,workflow)
+
     @app.post('/api/v1/workflows/{workflow}/preview')
     def preview_direct(workflow: str,data: DirectInstallation,ctx=Depends(context)):
         return service().delivery.preview(ctx,workflow,data.workflow_revision,data.bindings)
@@ -280,8 +299,9 @@ def create_app(settings, run_worker=True, executor=None):
         return service().delivery.install(ctx,workflow,data.workflow_revision,data.bindings,data.expected_revision)
 
     @app.post('/api/v1/workflows/{workflow}/runs',status_code=201)
-    def invoke_direct(workflow: str,data: Invocation,idempotency_key: str=Header(min_length=1,max_length=100),ctx=Depends(context)):
-        return service().delivery.invoke(ctx,workflow,data.model_dump(exclude_none=True),idempotency_key)
+    def invoke_direct(workflow: str,data: Invocation,idempotency_key: str=Header(min_length=1,max_length=100),
+                      installation_revision: int | None=Query(default=None,ge=1),ctx=Depends(context)):
+        return service().delivery.invoke(ctx,workflow,data.model_dump(exclude_none=True),idempotency_key,installation_revision)
 
     @app.get('/api/v1/workflows/{workflow}/runs')
     def direct_runs(workflow: str,limit: int=Query(default=100,ge=1,le=100),ctx=Depends(context)):
@@ -482,6 +502,65 @@ def create_app(settings, run_worker=True, executor=None):
             views = [service().invocation(ctx, p['application_id'], p['id'], c) for p in projects]
             return dict(units=units, agents=agents, projects=views, models=service().settings.catalog())
 
+    @app.get('/api/v1/workbench/examples')
+    def workbench_examples(ctx=Depends(admin)):
+        return WorkflowExamples(service()).list(ctx)
+
+    @app.get('/api/v1/workbench/examples/{key}')
+    def workbench_example(key: str, ctx=Depends(admin)):
+        return WorkflowExamples(service()).detail(ctx, key)
+
+    @app.post('/api/v1/workbench/examples/{key}/prepare')
+    def prepare_example(key: str, ctx=Depends(admin)):
+        return WorkflowExamples(service()).prepare(ctx, key)
+
+    @app.post('/api/v1/workbench/examples/{key}/install')
+    def install_example(key: str, data: InstallWorkflow, ctx=Depends(admin)):
+        return WorkflowExamples(service()).install(ctx, key, data.workflow_revision, data.bindings, data.expected_revision)
+
+    @app.get('/api/v1/workbench/installations')
+    def workbench_installations(ctx=Depends(context)):
+        return workbench().installations(ctx)
+
+    @app.get('/api/v1/workbench/installations/{workflow}/definition')
+    def workbench_installed_definition(workflow: str, ctx=Depends(context)):
+        return workbench().installed_definition(ctx, workflow)
+
+    @app.get('/api/v1/workbench/binding-options/{workflow}')
+    def workbench_bindings(workflow: str, revision: int | None=Query(default=None,ge=1),ctx=Depends(context)):
+        return workbench().binding_options(ctx,workflow,revision)
+
+    @app.get('/api/v1/workbench/organizations')
+    def workbench_organizations(ctx=Depends(context)):
+        return workbench().orgs(ctx)
+
+    @app.get('/api/v1/workbench/runs')
+    def workbench_runs(limit: int=Query(default=25,ge=1,le=100),cursor: str | None=Query(default=None,max_length=512),
+                       status: str | None=Query(default=None,max_length=32),q: str | None=Query(default=None,max_length=100),
+                       ctx=Depends(context)):
+        return workbench().runs(ctx,limit,cursor,status,q)
+
+    @app.get('/api/v1/workbench/run-counts')
+    def workbench_counts(ctx=Depends(context)):
+        return workbench().run_counts(ctx)
+
+    @app.get('/api/v1/workbench/runs/{run}')
+    def workbench_run(run: str,ctx=Depends(context)):
+        return workbench().run(ctx,run)
+
+    @app.get('/api/v1/workbench/runs/{run}/draft')
+    def workbench_run_draft(run: str, node: str | None=Query(default=None,max_length=64),
+                            plan_revision: int | None=Query(default=None,ge=1),
+                            select: list[str] | None=Query(default=None,max_length=40),ctx=Depends(admin)):
+        from ..services.run_draft import read_run_draft
+        return read_run_draft(service(),ctx,run,node,plan_revision,select)
+
+    @app.get('/api/v1/workbench/inbox')
+    def workbench_inbox(limit: int=Query(default=25,ge=1,le=100),cursor: str | None=Query(default=None,max_length=512),
+                        kind: Literal['receipt','accounting','approval','review','question','execution'] | None=None,
+                        ctx=Depends(context)):
+        return workbench().inbox(ctx,limit,cursor,kind)
+
     @app.get('/static/orchpact-client.js')
     def browser_client():
         return FileResponse(Path(__file__).resolve().parents[1]/'static/orchpact-client.js',media_type='text/javascript')
@@ -492,8 +571,7 @@ def create_app(settings, run_worker=True, executor=None):
 
     @app.get('/api/docs', dependencies=[Depends(admin)])
     def docs():
-        from fastapi.openapi.docs import get_swagger_ui_html
-        return get_swagger_ui_html(openapi_url='/api/v1/openapi.json', title='Orchpact API', swagger_js_url='/api-assets/swagger-ui-bundle.js', swagger_css_url='/api-assets/swagger-ui.css')
+        return FileResponse(Path(__file__).with_name('api-docs.html'))
 
     @app.get('/account/', include_in_schema=False)
     def account():
@@ -503,24 +581,38 @@ def create_app(settings, run_worker=True, executor=None):
     def console(request: Request):
         try:
             actor = service().access.authenticate(request.cookies.get('orchpact_session', ''), session_audience(request))
-            if actor.admin:
-                return FileResponse(STATIC / 'kernel/index.html')
         except HTTPException:
-            pass
-        return FileResponse(STATIC / 'admin-login.html')
+            destination = '/admin/' + ('?' + request.url.query if request.url.query else '')
+            return RedirectResponse('/account/?'+urlencode({'return':destination}), status_code=303)
+        if not actor.admin:
+            return RedirectResponse('/workspace/', status_code=303)
+        return FileResponse(STATIC / 'kernel/index.html')
 
     @app.get('/admin', include_in_schema=False)
     def admin_redirect():
         return RedirectResponse('/admin/')
 
-    @app.api_route('/', methods=['GET','HEAD'], include_in_schema=False)
+    @app.get('/workspace/', include_in_schema=False)
+    def workspace_console(request: Request):
+        try:
+            service().access.authenticate(request.cookies.get('orchpact_session', ''), session_audience(request))
+        except HTTPException:
+            return RedirectResponse('/account/?return=/workspace/', status_code=303)
+        return FileResponse(STATIC / 'kernel/index.html', headers={'Cache-Control': 'no-store'})
+
+    @app.get('/workspace', include_in_schema=False)
+    def workspace_redirect():
+        return RedirectResponse('/workspace/')
+
+    @app.api_route('/', methods=['GET', 'HEAD'], include_in_schema=False)
     def home():
-        return FileResponse(STATIC / 'showcase/index.html')
+        return RedirectResponse('/admin/', status_code=303)
 
-    @app.get('/about',include_in_schema=False)
-    def about_redirect():return RedirectResponse('/about/')
+    @app.api_route('/about', methods=['GET', 'HEAD'], include_in_schema=False)
+    @app.api_route('/about/', methods=['GET', 'HEAD'], include_in_schema=False)
+    def about_redirect():
+        return RedirectResponse('https://orchpact.github.io/', status_code=303)
 
-    app.mount('/about',StaticFiles(directory=STATIC/'showcase',html=True),name='design')
     app.mount('/api-assets', StaticFiles(directory=STATIC / 'vendor'), name='api-assets')
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
 

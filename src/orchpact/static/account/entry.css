@@ -1,0 +1,27 @@
+.entry-page {
+  min-height:100vh; min-height:100dvh; display:grid; grid-template-rows:auto 1fr auto;
+  background:var(--op-page); padding:0 max(24px, calc((100vw - 1400px)/2));
+}
+.entry-mast,.entry-project {display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:22px 0;}
+.entry-mast {border-bottom:1px solid var(--op-line);}
+.entry-mast img {display:block;height:36px;width:auto;}
+.entry-mast span,.entry-project {color:var(--op-muted);font-size:.875rem;}
+.entry-main {display:grid;place-items:center;padding:clamp(36px,8dvh,90px) 0;outline:none;}
+.entry-card {width:min(100%,410px);background:var(--op-surface);border:1px solid var(--op-line);border-radius:14px;padding:clamp(24px,5vw,38px);}
+.entry-card h1 {font-size:clamp(1.65rem,3vw,2.1rem);letter-spacing:-.045em;font-weight:680;margin:0;}
+.entry-hint {color:var(--op-muted);font-size:.9rem;margin:.65rem 0 0;}
+.entry-modes {display:flex;gap:3px;padding:3px;margin:1.3rem 0 .25rem;background:var(--op-subtle);border-radius:8px;}
+.entry-modes button {width:50%;min-height:36px;border:0;border-radius:5px;color:var(--op-muted);background:transparent;}
+.entry-modes button[aria-pressed=true] {background:var(--op-surface);color:var(--op-link);box-shadow:0 1px 3px color-mix(in srgb,var(--op-text) 16%,transparent);}
+#login-form {margin-top:1.35rem;}
+.entry-label {font-size:.875rem;font-weight:620;display:block;margin:1rem 0 .35rem;}
+#login-form input {width:100%;min-height:43px;padding:8px 12px;border:1px solid var(--op-control);border-radius:7px;font:inherit;color:var(--op-text);background:var(--op-surface);}
+.entry-card .entry-submit {width:100%;min-height:44px;margin-top:1.65rem;border:0;border-radius:7px;color:var(--op-on-action);background:var(--op-action);font-size:.94rem;}
+.entry-card .entry-submit:hover:enabled {background:var(--op-action-hover);}
+.entry-card .entry-submit:active:enabled {background:var(--op-action-active);}
+.entry-card .entry-submit:disabled {background:var(--op-disabled-bg);color:var(--op-disabled-fg);}
+.entry-error {color:var(--op-danger-fg);background:var(--op-danger-bg);padding:9px 12px;border-radius:6px;margin:.9rem 0 0;font-size:.875rem;}
+.entry-project {border-top:1px solid var(--op-line);flex-wrap:wrap;}
+.entry-project nav {display:flex;flex-wrap:wrap;gap:1.15rem;}
+.entry-project nav a {color:var(--op-link);text-underline-offset:3px;}
+@media(max-width:480px){.entry-page{padding-inline:16px;}.entry-mast,.entry-project{padding-block:15px;}.entry-mast img{height:32px;}.entry-project{font-size:.8rem;}}

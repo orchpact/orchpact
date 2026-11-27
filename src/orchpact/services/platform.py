@@ -30,7 +30,9 @@ class Platform:
         from .validation import DeliveryContracts
         self.contracts = DeliveryContracts(self)
         from .tools import ToolRuntime
-        self.tools = ToolRuntime(self)
+        from ..adapters.tools import ToolRegistry
+        from ..scenarios import verifiers
+        self.tools = ToolRuntime(self, ToolRegistry(builtins=verifiers(self)))
         from .tool_approvals import ToolApprovals
         self.tool_approvals = ToolApprovals(self)
         from .verification import VerificationService
@@ -206,12 +208,12 @@ class Platform:
             if not set(policy['required_checks'])<=set(metadata['checks']):raise ValueError('Verifier 未声明全部阻断检查')
             if not set(media_types)<=set(metadata['media_types']):raise ValueError('Verifier 不支持被验证产物的媒体类型')
         def exported_media(node,path):
-            if path in node['outputs']:return {'application/json'}
+            if path in node.get('outputs',{}):return {'application/json'}
             if path in node.get('artifact_outputs',{}):return {node['artifact_outputs'][path]['media_type']}
             result=set()
-            if path in node['exports']:
+            if path in node.get('exports',[]):
                 for child in nodes.values():
-                    if child['parent']==node['key']:result.update(exported_media(child,path))
+                    if child.get('parent')==node['key']:result.update(exported_media(child,path))
             return result
         for operation in manifest['operations'].values():
             if operation.get('verification'):
@@ -220,7 +222,7 @@ class Platform:
             nodes={node['key']:node for node in operation.get('execution_plan',{}).get('nodes',[])}
             for node in nodes.values():
                 if not node.get('verification'):continue
-                paths=set(node['outputs'])|set(node.get('artifact_outputs',{}))|set(node.get('exports',[]))
+                paths=set(node.get('outputs',{}))|set(node.get('artifact_outputs',{}))|set(node.get('exports',[]))
                 media=set().union(*(exported_media(node,path) for path in paths)) if paths else set()
                 check(node['verification'],media)
 
@@ -944,11 +946,14 @@ class Platform:
                 t = dict(row);snap = loads(t.pop('snapshot'));node = loads(t.pop('definition'))
                 t.update(required=node.get('active',True), name=snap['unit']['name'] if snap.get('crew') else snap['agent']['name'] if snap['agent'] else snap['unit']['name'], recruited=bool(snap['agent'] and snap['agent'].get('project_id')), node_key=t['node_key'], superseded_by=None,
                          requires_independent_review=any(p['policy'].get('independent_review',False) for p in snap.get('policies',[])))
+                if node.get('title'):
+                    t['title'] = node['title']
                 tasks.append(t)
             root = next(t for t in tasks if t['parent_id'] is None)
             requests = []
-            for row in c.execute('''SELECT r.*, ch.state AS charge_state, ch.reserved AS charge_reserved,
+            for row in c.execute('''SELECT r.*, a.task_id, ch.state AS charge_state, ch.reserved AS charge_reserved,
                     ch.charged AS charge_settled FROM requests r
+                    JOIN attempts a ON a.id=r.attempt_id
                     LEFT JOIN credit_charges ch ON ch.request_id=r.id
                     WHERE r.project_id=%s ORDER BY r.created,r.id''', (key,)):
                 value = dict(row)
@@ -958,7 +963,7 @@ class Platform:
                     settled_points=settled/1_000_000 if settled is not None else None)
                 value['credits'] = measure(value);requests.append(value)
             questions = [dict(q) for q in c.execute("SELECT q.* FROM messages q WHERE q.project_id=%s AND q.to_task IS NULL AND q.kind='question' AND NOT EXISTS(SELECT 1 FROM messages a WHERE a.reply_to=q.id)", (key,))]
-            plan = c.execute('SELECT repairs FROM execution_plans WHERE project_id=%s', (key,)).fetchone()
+            plan = c.execute("SELECT repairs,definition::jsonb ->> 'result_node' AS result_node FROM execution_plans WHERE project_id=%s", (key,)).fetchone()
             return dict(id=key, project_id=key, root_task_id=root['id'], application_id=app, operation=r['operation'], revision=p['revision'], status=p['status'], context=loads(r['context']),
                         result=loads(r['result']) if r['result'] and p['status'] == 'completed' else None,
                         artifact_id=root['artifact_id'], tasks=tasks, questions=questions, blockers=[t['error'] for t in tasks if t['error']], error=root['error'] or next((t['error'] for t in tasks if t['error']), None),
@@ -968,7 +973,7 @@ class Platform:
                         tool_approvals=self.tool_approvals.summaries(c, key),
                         verification_evidence=[self.verifications.public(dict(evidence)) for evidence in c.execute('SELECT * FROM verification_evidence WHERE project_id=%s ORDER BY created,id',(key,))],
                         requests=requests, usage=summarize(requests), payer_user_id=p['created_by'],workflow=loads(r['binding']).get('workflow'),
-                        execution_plan=dict(revision=p['revision'], repairs=plan['repairs']) if plan else None,
+                        execution_plan=dict(revision=p['revision'], repairs=plan['repairs'], result_node=plan['result_node']) if plan else None,
                         retryable_tasks=[t['id'] for t in tasks if t['status'] in ('failed', 'interrupted') and t['review'] != 'waived' and t['turns'] < 12])
 
     def list_invocations(self, ctx, app, limit=100):
@@ -1102,6 +1107,7 @@ class Platform:
         if not isinstance(reason,str) or not reason or len(reason)>2000 or not isinstance(changes,list) or not isinstance(additions,list) or not (changes or additions) or len(changes) + len(additions) > 20:
             raise ValueError('计划变更需要理由和有界改动')
         checks,protected,edges=self.acceptance_dependencies(c,project['id'])
+        new_links = []
         for change in changes:
             if not isinstance(change,dict):raise ValueError('节点变更必须是对象')
             for field,limit in [('description',12000),('expected',3000)]:
@@ -1111,8 +1117,14 @@ class Platform:
             task = self.row(c, 'tasks', change['task_id'])
             if task['project_id'] != project['id'] or task['status'] not in ('queued', 'waiting') or task['turns']:
                 raise DomainError('amendment_conflict', '首版只允许调整尚未开始的工作')
-            if set(change) - {'task_id', 'description', 'expected', 'depends_on', 'cancel'}:
+            if set(change) - {'task_id', 'description', 'expected', 'depends_on', 'add_dependencies', 'cancel'}:
                 raise ValueError('计划变更包含未支持的字段')
+            if 'add_dependencies' in change:
+                keys = change['add_dependencies']
+                if (change.get('cancel') or not isinstance(keys, list) or not 1 <= len(keys) <= 20
+                        or any(not isinstance(key, str) for key in keys) or len(set(keys)) != len(keys)):
+                    raise ValueError('新增依赖须列出本次新增节点的非重复标识')
+                new_links.append((task['id'], keys))
             if change.get('cancel') and task['id'] in protected:
                 raise DomainError('acceptance_locked','不能取消已冻结的验收检查、输入或汇总路径；请发布新定义并发起新执行')
             if task['id'] in checks and any(change.get(field,task[field])!=task[field] for field in ('description','expected')):
@@ -1134,6 +1146,8 @@ class Platform:
                             raise ValueError('依赖越界或自循环')
                         c.execute('INSERT INTO dependencies VALUES(%s,%s)', (task['id'], dep))
         tools,input_schema=self.plan_resources(c,project['id'])
+        if new_links and not additions:
+            raise ValueError('须同时提交被引用的新增节点')
         if additions:
             from ..kernel.models import PlanNode
             nodes = [PlanNode.model_validate(value).model_dump() for value in additions]
@@ -1179,6 +1193,11 @@ class Platform:
                 for dep in node['depends_on']:
                     if dep not in aliases:raise ValueError('新增节点依赖不存在')
                     c.execute('INSERT INTO dependencies VALUES(%s,%s)',(aliases[node['key']],aliases[dep]))
+            for task, keys in new_links:
+                if not set(keys) <= new_aliases:
+                    raise ValueError('新增依赖只能引用本次新增节点')
+                for key in keys:
+                    c.execute('INSERT INTO dependencies VALUES(%s,%s) ON CONFLICT DO NOTHING', (task, aliases[key]))
         planrow=c.execute('SELECT definition FROM execution_plans WHERE project_id=%s',(project['id'],)).fetchone()
         if planrow:
             plan=loads(planrow[0]);tasks=[dict(r) for r in c.execute('SELECT * FROM tasks WHERE project_id=%s',(project['id'],))]

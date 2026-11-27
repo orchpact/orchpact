@@ -96,7 +96,7 @@ class VerificationFixture(KernelFixture):
         body=self.config();text=next(p for p in body['value']['providers'] if p['id']=='text')
         if self.config()['revision']==0:text['secret']='text-fixture-secret'
         renderer=deepcopy(text)
-        renderer.update(id='tool:renderer',category='tool',label='Renderer',adapter='builtin',base_url='',model='',key_env='',secondary_key_env='',
+        renderer.update(id='tool:renderer',category='tool',label='Renderer',adapter='builtin',base_url='',model='',
             search=False,thinking_disabled=False,image_options={},pricing={'unit':'request','points':1,'unit_size':1},
             tool_interface='document.render',tool_interface_version='1',implementation_version='1.0.0',
             tool_policy={'workspace_ids':[self.workspace],'application_ids':['fixture'],'require_credential':True,'max_concurrency':2},secret='tool-secret')

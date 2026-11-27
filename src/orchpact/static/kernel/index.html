@@ -1,32 +1,86 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>管理后台 · Orchpact</title><link rel="icon" href="/static/favicon.svg"><link rel="stylesheet" href="/static/kernel/style.css"></head>
-<body>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>工作台 · Orchpact</title>
+  <link rel="icon" href="/static/brand/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
+  <script src="/static/appearance.js"></script>
+  <link rel="stylesheet" href="/static/brand/identity-tokens.css">
+  <link rel="stylesheet" href="/static/appearance.css">
+  <link rel="stylesheet" href="/static/ui/admin.css">
+  <link rel="stylesheet" href="/static/kernel/style.css">
+  <link rel="stylesheet" href="/static/kernel/flow.css">
+  <link rel="stylesheet" href="/static/account/style.css">
+  <link rel="stylesheet" href="/static/kernel/studio.css">
+</head>
+<body class="studio-shell">
 <a class="skip-link" href="#console-main">跳到主要内容</a>
-<header class="console-bar glass">
-  <a class="brand" href="/admin/"><img src="/static/brand/orchpact-icon.svg" width="36" height="36" alt=""><span>Orchpact <small>管理后台</small></span></a>
-  <label class="workspace-control"><span>当前空间</span><select id="workspace" aria-label="当前工作空间"></select></label>
-  <div class="toolbar">
-    <a href="/account/">账号与积分</a><a href="/api/docs">API</a>
-    <button id="refresh" type="button" aria-label="刷新当前页面" title="刷新当前页面"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4.5 12a7.5 7.5 0 0 1 13-5L20 12m-.5 1a7.5 7.5 0 0 1-13 4"/></svg></button>
-    <button id="logout" type="button">退出</button>
-  </div>
-</header>
+<header class="console-bar"></header>
 <div class="layout">
-  <nav class="console-nav glass" aria-label="管理导航">
-    <a href="#overview"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></svg><span>工作总览</span></a>
-    <a href="#workflows"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="5" rx="1.4"/><rect x="3" y="16" width="6" height="5" rx="1.4"/><rect x="15" y="16" width="6" height="5" rx="1.4"/><path d="M12 8v4m-6 4v-4h12v4"/></svg><span>工作流目录</span></a>
-    <a href="#projects"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg><span>执行与交付</span></a>
-    <a href="#attention"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13 6 6h12l2 7v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-5h4l2 3h4l2-3h4"/></svg><span>待处理</span></a>
-    <details id="advanced-navigation">
-      <summary><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span class="nav-desktop">管理设置</span><span class="nav-mobile">更多</span></summary>
-      <div class="settings-menu">
-        <a href="#providers">提供者配置</a><a href="#organizations">组织与角色</a><a href="#policies">治理规则</a>
-      </div>
-    </details>
-  </nav>
-  <main id="console-main" tabindex="-1"><div id="notice" role="status" aria-live="polite"></div><section id="content" aria-live="polite"></section></main>
+  <nav class="console-nav" aria-label="工作台导航"></nav>
+  <aside id="resource-drawer" aria-label="画布资源面板" hidden>
+    <div class="drawer-bar"><strong id="drawer-caption"></strong><button type="button" id="close-drawer" aria-label="收起面板" title="收起面板">×</button></div>
+    <div id="drawer-content"></div>
+  </aside>
+  <main id="console-main" tabindex="-1"><div id="notice" role="status" aria-live="polite"></div><section id="content" aria-live="polite"><p class="muted">正在载入工作台…</p><noscript>使用工作台需要启用 JavaScript。</noscript></section></main>
 </div>
-<dialog id="editor" aria-labelledby="edit-title"><form id="edit-form"><div class="dialog-head"><h2 id="edit-title"></h2><button id="close-editor" type="button" aria-label="关闭">×</button></div><p id="edit-help"></p><label for="edit-json">JSON 配置</label><textarea id="edit-json" rows="18" spellcheck="false" required></textarea><p id="edit-error" role="alert"></p><div class="actions"><button id="save-editor" class="primary" type="submit">保存</button></div></form></dialog>
+<template id="account-view">
+    <section class="account-view" aria-labelledby="account-title">
+      <div class="heading"><h1 id="account-title">账号与积分</h1></div>
+      <p id="message" class="account-status" role="status"></p>
+      <div class="account-grid">
+        <section class="panel account-spaces" aria-labelledby="spaces-heading">
+          <h2 id="spaces-heading">工作空间</h2>
+          <div id="spaces" class="account-list"></div>
+          <div class="space-forms">
+            <details class="account-disclosure" id="create-space">
+              <summary>创建空间</summary>
+              <form id="create-form" class="account-form">
+                <label>新空间名称<input name="name" maxlength="80" required></label>
+                <button type="submit">创建空间</button>
+              </form>
+            </details>
+            <details class="account-disclosure" id="join-space">
+              <summary>接受空间邀请</summary>
+              <form id="join-form" class="account-form">
+                <label>空间邀请码<input name="code" minlength="20" maxlength="200" required autocomplete="off"></label>
+                <button type="submit">加入协作空间</button>
+              </form>
+            </details>
+          </div>
+          <section id="members" class="account-members" aria-live="polite" hidden></section>
+        </section>
+        <section id="credit-summary" class="panel account-wallet" aria-labelledby="wallet-heading" hidden>
+          <h2 id="wallet-heading">积分账户</h2>
+          <div id="wallet-metrics"></div>
+          <div class="actions"><button id="my-credits" type="button">查看积分流水</button></div>
+        </section>
+      </div>
+      <section id="admin-tools" class="panel account-admin" aria-labelledby="users-heading" hidden>
+        <div class="row">
+          <h2 id="users-heading">用户账号</h2>
+          <div class="actions"><a class="action-link" href="#providers">模型与计价</a><button class="primary" id="invite-account" type="button">生成注册邀请码</button></div>
+        </div>
+        <div id="users" class="account-list" aria-live="polite"></div>
+      </section>
+    </section>
+  <dialog id="invite-dialog" class="account-dialog" aria-labelledby="invite-title">
+    <div class="dialog-head"><h2 id="invite-title">邀请码</h2><button type="button" data-close aria-label="关闭">×</button></div>
+    <p id="invite-help" class="muted"></p>
+    <textarea id="invite-code" readonly rows="2" aria-label="邀请码"></textarea>
+    <p class="account-status" role="status"></p>
+    <div class="actions"><button id="copy-code" class="primary" type="button">复制邀请码</button></div>
+  </dialog>
+  <dialog id="credit-dialog" class="account-dialog" aria-labelledby="credit-title">
+    <div class="dialog-head"><h2 id="credit-title">积分账户</h2><button type="button" data-close aria-label="关闭">×</button></div>
+    <p class="account-status" role="status"></p>
+    <div id="credit-body"></div>
+  </dialog>
+</template>
+<div id="editor-host"></div>
 <dialog id="organization-editor" aria-labelledby="organization-title">
   <form>
     <div class="organization-dialog-head dialog-head">
@@ -44,6 +98,5 @@
   </form>
 </dialog>
 <script src="/static/kernel/attention.js"></script>
-<script src="/static/kernel/organizations.js"></script>
 <script src="/static/kernel/template-form.js"></script>
-<script src="/static/kernel/app.js"></script></body></html>
+<script type="module" src="/static/kernel/app.js"></script></body></html>

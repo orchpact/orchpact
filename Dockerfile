@@ -4,6 +4,8 @@ ENV UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never UV_PROJECT_ENVIRONMENT=/opt/orch
 WORKDIR /build
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
+COPY examples/fulfillment/input.json examples/fulfillment/workflow.json ./examples/fulfillment/
+COPY examples/mystery-story/input.json examples/mystery-story/workflow.json ./examples/mystery-story/
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM python:3.12-slim-bookworm

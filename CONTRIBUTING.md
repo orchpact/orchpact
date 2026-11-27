@@ -1,6 +1,18 @@
 # Contributing
 
-Use Python 3.11–3.13, uv and Node's built-in test runner. No frontend package manager is required. Tests require real PostgreSQL: install local server binaries and set ORCHPACT_PG_BIN, or use ORCHPACT_TEST_DATABASE_URL pointing to a dedicated test server with CREATEDB permission. Set ORCHPACT_PG_DUMP to a matching client. Never point the test server at production. See docs/POSTGRESQL.md.
+Use Python 3.11–3.13 and uv. The console and sign-in use React with shadcn/ui. Design and run views share @xyflow/react. The wheel and Docker image serve the included browser assets. To change them, use Node 22.13+ and npm from the repository root.
+
+```sh
+npm ci --prefix frontend
+npm run --prefix frontend build
+npm run --prefix frontend check
+python3 design/identity/validate.py
+python3 scripts/sync_identity.py --check
+```
+
+After updating the versioned design kit, run `python3 scripts/sync_identity.py` to copy the approved assets to their public paths.
+
+Tests require real PostgreSQL: install local server binaries and set ORCHPACT_PG_BIN, or use ORCHPACT_TEST_DATABASE_URL pointing to a dedicated test server with CREATEDB permission. Set ORCHPACT_PG_DUMP to a matching client. Never point the test server at production. See [isolated PostgreSQL test setup](https://orchpact.github.io/docs/postgresql/#测试与-ci).
 
 ```sh
 uv sync --frozen
@@ -15,7 +27,7 @@ Use temporary instances and mocked external transports in tests. Do not invoke p
 
 Preserve immutable prompts, receipts, payer and pricing boundaries. Authorization, billing and file changes need behavior regressions. Update public contracts and docs when behavior changes. Never commit .env, runtime databases, private keys, sessions, operational artifacts or user material.
 
-Public compatibility boundaries are in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md). Candidate snapshots use the reviewed [release/files.json](release/files.json) allowlist; see [release validation](docs/RELEASE_VALIDATION.md). Keep private operational evidence outside that snapshot.
+Public compatibility boundaries are in [the compatibility guide](https://orchpact.github.io/docs/compatibility/). Candidate snapshots use the reviewed [release/files.json](release/files.json) allowlist; see [release validation](https://orchpact.github.io/docs/validation/). Keep private operational evidence outside that snapshot.
 
 This project is available under the MIT License. Preserve third-party license notices when changing vendored assets.
 
@@ -31,4 +43,4 @@ Allowed types: `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`
 
 Enable the repository hook with `git config core.hooksPath .githooks`. CI checks submitted commit subjects and PR titles; run `python3 scripts/check_commits.py --base BASE_SHA --head HEAD` locally for a range.
 
-CrewAI owns team task execution and each member agent loop. Teams are reusable declarations; runtime Crew/Task/Agent objects are never shared across runs. Keep cross-task orchestration, authorization, billing, receipts and artifact acceptance in Orchpact. All model/tool effects must pass through platform adapters; see [execution boundaries](docs/EXECUTION_BOUNDARY.md). Agent integration tests must run real CrewAI with synthetic external transports.
+CrewAI owns team task execution and each member agent loop. Teams are reusable declarations; runtime Crew/Task/Agent objects are never shared across runs. Keep cross-task orchestration, authorization, billing, receipts and artifact acceptance in Orchpact. All model/tool effects must pass through platform adapters; see [execution boundaries](https://orchpact.github.io/docs/execution/). Agent integration tests must run real CrewAI with synthetic external transports.

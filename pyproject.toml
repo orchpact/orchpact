@@ -32,6 +32,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/orchpact"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"examples/fulfillment/input.json" = "orchpact/scenarios/assets/fulfillment/input.json"
+"examples/fulfillment/workflow.json" = "orchpact/scenarios/assets/fulfillment/workflow.json"
+"examples/mystery-story/input.json" = "orchpact/scenarios/assets/mystery-story/input.json"
+"examples/mystery-story/workflow.json" = "orchpact/scenarios/assets/mystery-story/workflow.json"
+
 [tool.hatch.build.targets.sdist]
-exclude = ["/artifacts/", "/docs/search-live-*.json", "/docs/workspace.png", "/docs/images/*.png"]
-include = ["/Dockerfile", "/.dockerignore", "/compose.yaml", "/docker/*.py", "/docker/*.sql", "/docker/README.md", "/src/", "/tests/", "/AGENTS.md", "/docs/GETTING_STARTED.md", "/docs/REPOSITORIES.md", "/docs/ARCHITECTURE.md", "/docs/EXECUTION_BOUNDARY.md", "/docs/TEAM_EXECUTION.md", "/docs/APPLICATIONS.md", "/docs/WORKSPACES.md", "/docs/PROVIDERS.md", "/docs/POSTGRESQL.md", "/docs/CONSOLE.md", "/docs/SHOWCASE.md", "/docs/WORKFLOWS.md", "/docs/COMPATIBILITY.md", "/docs/NAMING.md", "/docs/RELEASE_VALIDATION.md", "/scripts/", "/.githooks/", "/release/", "/config/", "/examples/", "/contracts/", "/evals/", "/LICENSE", "/THIRD_PARTY.md", "/README.md", "/README.en.md", "/CONTRIBUTING.md", "/SECURITY.md", "/.github/workflows/", "/pyproject.toml", "/uv.lock", "/.env.example", "/.gitignore"]
+exclude = ["/artifacts/"]
+include = ["/Dockerfile", "/.dockerignore", "/compose.yaml", "/docker/*.py", "/docker/*.sql", "/src/", "/tests/", "/AGENTS.md", "/scripts/", "/.githooks/", "/frontend/src/", "/frontend/licenses/", "/frontend/*.json", "/frontend/build.mjs", "/frontend/LICENSE-shadcn.txt", "/design/identity/", "/release/", "/config/", "/examples/", "/contracts/", "/evals/", "/LICENSE", "/THIRD_PARTY.md", "/README.md", "/README.en.md", "/CONTRIBUTING.md", "/SECURITY.md", "/.github/workflows/", "/pyproject.toml", "/uv.lock", "/.env.example", "/.gitattributes", "/.gitignore"]

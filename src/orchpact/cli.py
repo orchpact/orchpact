@@ -3,7 +3,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-import secrets
+from getpass import getpass
 import shutil
 
 from .config import Settings
@@ -15,7 +15,7 @@ def initialize(root):
     config = root / 'config'
     config.mkdir(exist_ok=True, mode=0o700)
     defaults = {
-        'models.toml': '# Optional until the first run. Credentials are environment references.\n[models.reasoning]\nlabel = "Text"\nkind = "text"\nmodel = "configure-your-model"\nbase_url = "https://api.deepseek.com"\nkey_env = "DEEPSEEK_API_KEY"\njson_mode = true\nenabled = "auto"\npriority = 10\n',
+        'models.toml': '# Optional until the first run. Configure provider credentials in the admin console.\n[models.reasoning]\nlabel = "Text"\nkind = "text"\nmodel = "configure-your-model"\nbase_url = "https://api.deepseek.com"\njson_mode = true\nenabled = "auto"\npriority = 10\n',
         'execution.toml': '[execution]\nworkers = 4\nmax_tasks_per_project = 1\nallow_experimental_planning = false\n',
         'credits.toml': '[credits]\ntokens_per_point = 1000\nsearch_points = 10\n',
         'security.toml': '# Public deployments require an explicit HTTPS origin.\n[security]\n',
@@ -29,7 +29,7 @@ def initialize(root):
     if not env.exists():
         fd = os.open(env, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w') as stream:
-            stream.write('ORCHPACT_API_TOKEN=' + secrets.token_urlsafe(48) + '\nORCHPACT_DATABASE_URL=postgresql://orchpact:configure-password@127.0.0.1:5432/orchpact\nDEEPSEEK_API_KEY=\n')
+            stream.write('ORCHPACT_DATABASE_URL=postgresql://orchpact:configure-password@127.0.0.1:5432/orchpact\n')
     return root
 
 
@@ -43,6 +43,9 @@ def main():
     serve.add_argument('--host', default='127.0.0.1')
     serve.add_argument('--port', type=int, default=8780)
     commands.add_parser('check')
+    setup = commands.add_parser('setup-admin', help='创建首个账号；实例须停止运行')
+    setup.add_argument('username')
+    setup.add_argument('--if-missing',action='store_true',help='已创建管理员时跳过初始化')
     workflow=commands.add_parser('workflow-check', help='Validate a portable definition without instance configuration')
     workflow.add_argument('definition',type=Path)
     expand=commands.add_parser('component-expand',help='Expand fixed local JSON components without instance configuration')
@@ -72,9 +75,32 @@ def main():
         if args.command == 'init':
             root = initialize(args.root)
             print('实例配置已初始化：' + str(root))
-            print('管理凭据仅保存在实例 .env；请配置 ORCHPACT_DATABASE_URL，模型按需配置。')
+            print('请配置 ORCHPACT_DATABASE_URL，模型按需配置。')
             return
         settings = Settings.load(args.root, getattr(args, 'host', '127.0.0.1'), getattr(args, 'port', 8780))
+        if args.command == 'setup-admin':
+            from fastapi import HTTPException
+            from .bootstrap import Instance
+            instance = Instance(settings).open()
+            try:
+                access = instance.service.access
+                if args.if_missing:
+                    state = access.setup_state()
+                    if state == 'complete':
+                        print('管理员账号已存在。')
+                        return
+                    if state != 'first':
+                        raise ValueError('请按实例升级文档完成管理员初始化')
+                password = getpass('账号密码：')
+                if password != getpass('确认密码：'):
+                    raise ValueError('两次输入的密码不一致')
+                access.setup_admin(args.username,password,offline=True)
+            except HTTPException as exc:
+                raise ValueError(exc.detail) from None
+            finally:
+                instance.close()
+            print('管理员账号已创建，请使用该账号和密码登录。')
+            return
         if args.command == 'check':
             for profile in settings.catalog():
                 print(profile['id'], profile['kind'], ','.join(profile['capabilities']))

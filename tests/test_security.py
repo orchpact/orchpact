@@ -1,6 +1,7 @@
 """HTTP, tenancy and legacy signed-scope restrictions."""
 from dataclasses import replace
 import json
+import re
 import time
 from pathlib import Path
 import tempfile
@@ -11,7 +12,7 @@ from orchpact.adapters.database import ident, now, dumps
 from orchpact.adapters.identity import Principal, principal
 from orchpact.bootstrap import Instance
 from orchpact.kernel.errors import Forbidden
-from runtime_fixtures import KernelFixture, package, TOKEN
+from runtime_fixtures import KernelFixture, package, ADMIN_USERNAME, ADMIN_PASSWORD
 
 
 class SecurityTests(KernelFixture):
@@ -28,9 +29,28 @@ class SecurityTests(KernelFixture):
         self.assertEqual(self.client.get('/api/v1/openapi.json').status_code,401)
         self.assertEqual(self.client.get('/healthz').status_code,200)
 
+    def test_api_documentation_can_boot_under_the_same_origin_script_policy(self):
+        page=self.client.get('/api/docs')
+        self.assertEqual(page.status_code,200)
+        self.assertIn("script-src 'self';",page.headers['content-security-policy'])
+        scripts=re.findall(r'<script\b([^>]*)>',page.text)
+        self.assertEqual(scripts,[
+            ' src="/static/appearance.js"',
+            ' src="/api-assets/swagger-ui-bundle.js" defer',
+            ' src="/static/api-docs.js" defer',
+        ])
+        for asset in ('/static/appearance.js','/static/appearance.css','/api-assets/swagger-ui-bundle.js','/static/api-docs.js'):
+            self.assertEqual(self.client.get(asset).status_code,200,asset)
+        schema=self.client.get('/api/v1/openapi.json')
+        self.assertEqual(schema.status_code,200)
+        self.assertIn('/api/v1/workflows',schema.json()['paths'])
+        self.client.headers.pop('Authorization')
+        self.assertEqual(self.client.get('/api/docs').status_code,401)
+        self.assertEqual(self.client.get('/api/v1/openapi.json').status_code,401)
+
     def test_cookie_cross_site_write_rejected(self):
         self.client.headers.pop('Authorization')
-        self.assertEqual(self.client.post('/api/v1/session',json=dict(token=TOKEN)).status_code,200)
+        self.assertEqual(self.client.post('/api/v1/auth/login',json=dict(username=ADMIN_USERNAME,password=ADMIN_PASSWORD)).status_code,200)
         self.assertEqual(self.client.post('/api/v1/workspaces',json=dict(name='bad'),headers={'Origin':'https://attacker.invalid'}).status_code,403)
         self.assertEqual(self.client.post('/api/v1/workspaces',json=dict(name='bad'),headers={'Sec-Fetch-Site':'cross-site'}).status_code,403)
         cookie=self.client.cookies.get('orchpact_session');self.assertTrue(cookie)

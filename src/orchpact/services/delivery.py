@@ -3,6 +3,7 @@
 Legacy application foreign keys remain as private storage scope identifiers so
 existing artifacts, receipts and accounting never need destructive migration.
 """
+from contextlib import nullcontext
 from hashlib import sha256
 import json
 
@@ -39,8 +40,8 @@ class WorkflowDelivery:
                 action='unchanged' if old and old['scope_id']==scope else 'upgrade' if old else 'install',
                 bindings_digest=canonical_digest(bindings),operations=list(manifest['operations']))
 
-    def installation(self,ctx,workflow):
-        with self.db.connect() as c:
+    def installation(self,ctx,workflow,c=None):
+        with self.db.connect() if c is None else nullcontext(c) as c:
             self.member(c,ctx);row=self.installed(c,ctx,workflow)
             if not row:raise NotFound('工作流尚未安装到当前 Workspace')
             manifest=loads(c.execute('SELECT manifest FROM organization_packages WHERE workspace_id=%s AND application_id=%s',
@@ -48,15 +49,15 @@ class WorkflowDelivery:
             return dict(workflow_id=workflow,workflow_revision=row['workflow_revision'],revision=row['revision'],
                 bindings=manifest['_workflow']['bindings'],bindings_digest=row['bindings_digest'])
 
-    def install(self,ctx,workflow,revision,bindings,expected):
-        with self.db.tx() as c:
+    def install(self,ctx,workflow,revision,bindings,expected,*,c=None):
+        with self.db.tx() if c is None else nullcontext(c) as c:
             self.member(c,ctx,owner=True)
             asset=self.s.workflows.resolve(c,workflow,revision)
             old=self.installed(c,ctx,workflow)
             if (old['revision'] if old else 0)!=expected:
                 raise DomainError('revision_conflict','安装已变化，请重新预览')
             scope=self.scope(ctx,asset,bindings)
-            if old and old['scope_id']==scope:return self.installation(ctx,workflow)
+            if old and old['scope_id']==scope:return self.installation(ctx,workflow,c)
             next_revision=expected+1
             existing=c.execute('SELECT config FROM applications WHERE id=%s',(scope,)).fetchone()
             marker=dict(direct_workflow=workflow,workspace_id=ctx.workspace_id)
@@ -77,14 +78,14 @@ class WorkflowDelivery:
                 (ctx.workspace_id,workflow,revision,scope,next_revision,canonical_digest(bindings)))
             self.s.db.event(c,None,None,'workflow.installed',workflow_id=workflow,workflow_revision=revision,
                 workspace_id=ctx.workspace_id,installation_revision=next_revision,actor=ctx.subject)
-        return self.installation(ctx,workflow)
+            return self.installation(ctx,workflow,c)
 
     @staticmethod
     def public(value):
         value=dict(value);value.pop('application_id',None)
         return value
 
-    def invoke(self,ctx,workflow,data,key):
+    def invoke(self,ctx,workflow,data,key,expected_revision=None):
         if not isinstance(key,str) or not 1<=len(key)<=100:raise ValueError('需要 Idempotency-Key')
         request_key=sha256((ctx.workspace_id+':'+key).encode()).hexdigest()
         fingerprint=sha256(json.dumps(data,sort_keys=True,ensure_ascii=False,allow_nan=False).encode()).hexdigest()
@@ -99,6 +100,8 @@ class WorkflowDelivery:
                 return self.public(self.s.invocation(ctx,old['application_id'],old['id'],c))
             installed=self.installed(c,ctx,workflow)
             if not installed:raise DomainError('workflow_not_installed','先预览并安装工作流资源')
+            if expected_revision is not None and installed['revision'] != expected_revision:
+                raise DomainError('revision_conflict','安装已变化，请重新加载运行表单')
             return self.public(self.s.invoke(ctx,installed['scope_id'],data,key,c=c))
 
     def run(self,ctx,key):

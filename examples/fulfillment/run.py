@@ -12,14 +12,13 @@ from unittest.mock import patch
 
 import httpx
 
-from orchpact.adapters.database import loads
 from orchpact.adapters.tools import ToolRegistry
 from orchpact.bootstrap import Instance
 from orchpact.config import Settings
 from orchpact.kernel.models import ExecutionContext
 from orchpact.services.tools import ToolRuntime
 from orchpact.testing import database_url_for
-from verify import check_plan
+from orchpact.scenarios.fulfillment import check_plan, copy_stage, summary, FulfillmentVerifier
 
 HERE=Path(__file__).resolve().parent
 HttpClient=httpx.Client
@@ -27,92 +26,33 @@ STAGES=['demand','stock','routes','allocation','costs','service','audit','releas
 CASES=['pass','repair-stock','repair-budget','reject-release','inconclusive']
 
 
-def copy_stage(original,stage):
-    keys={'demand':['orders'],'stock':['warehouses','inbounds'],'routes':['routes','carriers','budget_cents','rate_confirmation']}[stage]
-    return {key:deepcopy(original[key]) for key in keys}
-
-
-def summary(original,allocation,stage):
-    result=check_plan(original,allocation)
-    keys=['total_cost_cents','cost_by_warehouse'] if stage=='costs' else ['deliveries']
-    return {key:result[key] for key in keys}
-
-
-class FulfillmentVerifier:
-    def __init__(self,service):self.s=service
-
-    def invoke(self,context):
-        stage=context.arguments['parameters']['stage'];reference=context.arguments['artifact']
-        with self.s.db.connect() as c:
-            artifact=self.s.row(c,'artifacts',reference['artifact_id'])
-            task=self.s.row(c,'tasks',artifact['task_id'])
-            original=loads(c.execute('SELECT input FROM invocations WHERE id=%s',(artifact['project_id'],)).fetchone()[0])
-            if loads(task['definition']).get('root'):
-                task=dict(c.execute("SELECT * FROM tasks WHERE project_id=%s AND node_key='release'",(artifact['project_id'],)).fetchone())
-            dependencies=[dict(row) for row in c.execute('SELECT t.* FROM dependencies d JOIN tasks t ON t.id=d.depends_on WHERE d.task_id=%s',(task['id'],))]
-            docs={}
-            for dependency in dependencies:
-                upstream=self.s.row(c,'artifacts',dependency['artifact_id'])
-                docs[dependency['node_key']]=json.loads(self.s.artifacts.read_files(upstream)[0]['data'])
-        if artifact['sha256']!=reference['sha256']:raise ValueError('Candidate digest mismatch')
-        candidate=json.loads(self.s.artifacts.read_files(artifact)[0]['data'])
-        violations=[];status='PASS';details={}
-        if stage in ('demand','stock','routes'):
-            if candidate!=copy_stage(original,stage):violations=[dict(code='frozen_input',path=stage,message='Stage must preserve the original input records')]
-        elif stage=='allocation':
-            details=check_plan(original,candidate);status=details['status'];violations=details['violations']
-        elif stage in ('costs','service'):
-            if candidate!=summary(original,docs['allocation'],stage):violations=[dict(code='derived_value',path=stage,message='Derived values disagree with the accepted allocation and original input')]
-        elif stage=='audit':
-            expected={row['artifact_id'] for row in dependencies}
-            if candidate['passed'] is not True or set(candidate['reviewed_artifact_ids'])!=expected or candidate['issues']:
-                violations=[dict(code='independent_review',path='audit',message='Review must approve exactly the current direct dependency versions without unresolved issues')]
-        elif stage=='release':
-            details=check_plan(original,{'shipments':candidate['shipments']});status=details['status'];violations=list(details['violations'])
-            if sorted(candidate['shipments'],key=lambda row:row['shipment_id'])!=sorted(docs['allocation']['shipments'],key=lambda row:row['shipment_id']):
-                violations.append(dict(code='changed_allocation',path='shipments',message='Release changed the accepted allocation'))
-            if candidate['total_cost_cents']!=details.get('total_cost_cents') or candidate['total_cost_cents']!=docs['costs']['total_cost_cents']:
-                violations.append(dict(code='release_cost',path='total_cost_cents',message='Release cost disagrees with independent recomputation'))
-            if candidate['deliveries']!=details.get('deliveries') or candidate['deliveries']!=docs['service']['deliveries']:
-                violations.append(dict(code='release_service',path='deliveries',message='Release delivery facts disagree with independent recomputation'))
-            if set(candidate['dependency_artifact_ids'])!={row['artifact_id'] for row in dependencies}:
-                violations.append(dict(code='release_evidence',path='dependency_artifact_ids',message='Release evidence must reference current accepted dependencies'))
-        else:raise ValueError('Unknown verification stage')
-        if violations:status='FAIL'
-        message='; '.join(row['code']+': '+row['message'] for row in violations) or ('Required input or tariff evidence is incomplete or ambiguous' if status=='INCONCLUSIVE' else 'Declared constraints passed')
-        return dict(status=status,checks=[dict(check_id=stage,status=status,node_key='allocation' if stage=='audit' else stage,
-            artifact_path=stage+'.json',field_path=violations[0]['path'] if violations else None,code=violations[0]['code'] if violations else 'tariff_unconfirmed' if status=='INCONCLUSIVE' else 'constraints_satisfied',message=message[:4000],repair='Re-read original input and fix the reported fields; never relax the contract.')],
-            evidence=dict(method='deterministic business constraints',violations=violations,computed_total_cost_cents=details.get('total_cost_cents')))
-
-
 def execute(case,transport='synthetic',live_root=None,model_id=None,budget_points=1000):
     original=json.loads((HERE/'input.json').read_text())
     if case=='inconclusive':original['rate_confirmation']='pending'
     definition=json.loads((HERE/'workflow.json').read_text())
-    environment={}
     if transport=='live':
         source=Settings.load(live_root)
         profile=deepcopy(source.choose(['text','json'],model_id))
-        if profile.get('credential'):
-            environment['ORCHPACT_FULFILLMENT_LIVE_KEY']=source._configuration.secret(profile.pop('credential'))
-            profile['key_env']='ORCHPACT_FULFILLMENT_LIVE_KEY'
+        secret=source._configuration.secret(profile.pop('credential'))
     else:
-        profile=dict(id='demo',label='Synthetic fulfillment',kind='text',model='synthetic',base_url='https://example.invalid/v1',key_env='ORCHPACT_FULFILLMENT_KEY',capabilities=['text','json'],priority=1,json_mode=True)
-        environment['ORCHPACT_FULFILLMENT_KEY']='synthetic-only'
+        profile=dict(id='demo',label='Synthetic fulfillment',kind='text',model='synthetic',
+                     base_url='https://example.invalid/v1',capabilities=['text','json'],priority=1,json_mode=True)
+        secret='synthetic-fixture-key'
     calls=Counter();initial={};first_attempts={};fault_seen=False
     with ExitStack() as stack:
-        stack.enter_context(patch.dict(os.environ,environment))
         directory=stack.enter_context(tempfile.TemporaryDirectory(prefix='orchpact-fulfillment-'))
         root=Path(directory)
-        settings=Settings(root,secrets.token_urlsafe(48),{profile['id']:profile},root/'var',database_url=database_url_for(root/'var'))
+        settings=Settings(root,{profile['id']:profile},root/'var',database_url=database_url_for(root/'var'))
         instance=Instance(settings).open()
         try:
             service=instance.service
-            ctx=ExecutionContext('user:'+instance.admin_user,instance.admin_workspace,user_id=instance.admin_user,admin=True)
+            actor=instance.service.access.setup_admin('scenario-owner',secrets.token_urlsafe(48),offline=True)
+            ctx=ExecutionContext('user:'+actor.user_id,actor.workspace_id,user_id=actor.user_id,admin=True)
             service.access.wallets.adjust(ctx.user_id,budget_points,'Explicit isolated fulfillment budget','fulfillment-budget',ctx.user_id)
             with service.db.tx() as c:service.policies.save(c,'platform',0,dict(budget_points=budget_points))
             config=service.configuration.public();provider=deepcopy(config['value']['providers'][0])
-            provider.update(id='tool:fulfillment-verifier',category='tool',label='Fulfillment verifier',adapter='builtin',base_url='',model='',key_env='',secondary_key_env='',search=False,thinking_disabled=False,image_options={},
+            config['value']['providers'][0]['secret']=secret
+            provider.update(id='tool:fulfillment-verifier',category='tool',label='Fulfillment verifier',adapter='builtin',base_url='',model='',search=False,thinking_disabled=False,image_options={},
                 pricing=dict(unit='request',points=0,unit_size=1),tool_interface='example.fulfillment.verify',tool_interface_version='1',implementation_version='1.0.0',
                 tool_policy=dict(workspace_ids=[ctx.workspace_id],workflow_ids=[definition['id']],max_concurrency=1),
                 tool_verifier=dict(checks=STAGES,media_types=['application/json'],trust_level='trusted',environment='isolated-fulfillment-python-v1'))

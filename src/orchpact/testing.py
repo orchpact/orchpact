@@ -95,3 +95,37 @@ def _cleanup():
         if result.returncode==0:shutil.rmtree(folder,ignore_errors=True)
 
 atexit.register(_cleanup)
+
+
+def fixture_provider_credentials(service, credentials=None, *, default_model=None, search=None):
+    """Attach explicit synthetic credentials to an isolated test instance's presets."""
+    from .adapters.database import ident
+
+    manager = service.configuration
+    original_seed = manager.seed
+    credentials = credentials or {}
+    search = search or {}
+    references = {}
+
+    def reference(secret):
+        if secret not in references:
+            key = ident()
+            manager.directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+            fd = os.open(manager.directory/key,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            with os.fdopen(fd,'w') as stream:
+                stream.write(secret)
+            references[secret] = key
+        return references[secret]
+
+    def seed():
+        value = original_seed()
+        for row in value['providers']:
+            if row['category'] in ('text','image'):
+                secret = credentials.get(row['id'],default_model)
+            else:
+                secret = search.get(row['id'])
+            if secret:
+                row['_secret_ref'] = reference(secret)
+        return value
+
+    manager.seed = seed

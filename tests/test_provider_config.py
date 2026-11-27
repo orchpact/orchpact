@@ -1,5 +1,5 @@
-from orchpact.testing import database_url_for
-from account_fixtures import create_user, register_package
+from orchpact.testing import database_url_for, fixture_provider_credentials
+from account_fixtures import bootstrap_admin, create_user, register_package
 import json
 import os
 from pathlib import Path
@@ -20,9 +20,10 @@ class ProviderConfigTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name)
         self.env=patch.dict(os.environ,{'CONFIG_TEST_KEY':'fake-text','SEARCH_TEST_KEY':'fake-search'});self.env.start()
         p=dict(id='text',label='测试文本',kind='text',model='test',base_url='https://example.invalid',key_env='CONFIG_TEST_KEY',capabilities=['text','json','search'])
-        self.settings=Settings(self.root,'config-test-admin-'*3,{'text':p},self.root/'var',database_url=database_url_for(self.root/'var'))
+        self.settings=Settings(self.root,{'text':p},self.root/'var',database_url=database_url_for(self.root/'var'))
         self.app=create_app(self.settings,run_worker=False)
-        self.admin=TestClient(self.app).__enter__();self.s=self.app.state.service;self.admin.headers['Authorization']='Bearer '+self.settings.token
+        self.admin=TestClient(self.app).__enter__();self.s=self.app.state.service;self.admin_actor=bootstrap_admin(self.s,self.admin)
+        fixture_provider_credentials(self.s,default_model='fixture-text-key')
         register_package(self.admin)
         self.user=TestClient(self.app)
         self.register(self.user,'config-user')
@@ -47,7 +48,7 @@ class ProviderConfigTests(unittest.TestCase):
     def test_admin_only_no_secret_echo_and_revision_conflict(self):
         self.assertEqual(self.user.get('/api/v1/admin/configuration').status_code,403)
         self.assertEqual(self.user.put('/api/v1/admin/configuration',json={}).status_code,403)
-        self.assertIn('验证管理凭据',self.user.get('/admin/').text)
+        self.assertEqual(self.user.get('/admin/',follow_redirects=False).headers['location'],'/workspace/')
         self.assertEqual(self.admin.get('/admin/').status_code,200)
         self.assertEqual(self.admin.get('/static/kernel/app.js').status_code,200)
         body=self.config();p=body['value']['providers'][0];p['secret']='new-secret-configured';body.pop('restart_required')
@@ -56,14 +57,15 @@ class ProviderConfigTests(unittest.TestCase):
         self.assertNotIn('new-secret-configured',self.admin.get('/api/v1/admin/configuration/history').text)
         self.assertEqual(self.save(body).status_code,409)
         self.assertTrue(result.json()['value']['providers'][0]['secret_configured'])
-        paths=list((self.settings.data/'provider-secrets').iterdir());self.assertEqual(len(paths),1)
-        self.assertEqual(paths[0].stat().st_mode&0o777,0o600)
+        stored=self.s.configuration.record(p['id'])
+        path=self.settings.data/'provider-secrets'/stored['_secret_ref']
+        self.assertEqual(path.stat().st_mode&0o777,0o600)
 
     def test_text_search_and_fetch_rates_snapshot_actual_settlement(self):
         body=self.config();body.pop('restart_required');self.rate(body,'text','tokens',2,1000)
         self.rate(body,'search:you','request',3);self.rate(body,'search:deepseek:fetch','request',7)
         next(p for p in body['value']['providers'] if p['id']=='text')['search']=True
-        next(p for p in body['value']['providers'] if p['id']=='search:you')['key_env']='SEARCH_TEST_KEY'
+        next(p for p in body['value']['providers'] if p['id']=='search:you')['secret']='fixture-search-key'
         self.save(body).raise_for_status();_,ctx=self.start();provider=Providers(self.s)
         a=provider.reserve(ctx,'model','text',token_bound=5000);provider.record(a,'completed',{'total_tokens':1500})
         b=provider.reserve(ctx,'search','search:you:search');provider.record(b,'failed')
@@ -92,6 +94,19 @@ class ProviderConfigTests(unittest.TestCase):
         self.assertEqual(Providers(self.s).credential(self.settings.choose(['text'])),'second-key')
         self.assertNotIn('second-key',json.dumps(self.admin.get('/api/v1/state').json()))
 
+    def test_legacy_provider_fields_and_environment_never_supply_credentials(self):
+        public = self.config()
+        self.assertNotIn('key_env', public['value']['providers'][0])
+        with patch.dict(os.environ, {'CONFIG_TEST_KEY':'must-not-be-read'}):
+            self.assertEqual(self.s.configuration.secret({'key_env':'CONFIG_TEST_KEY'}),'')
+            with self.assertRaisesRegex(ValueError,'后台凭据'):
+                Providers(self.s).credential({'key_env':'CONFIG_TEST_KEY'})
+            with self.assertRaisesRegex(ValueError,'后台凭据'):
+                Providers(self.s).credential({'credential':{'key_env':'CONFIG_TEST_KEY'}})
+            public.pop('restart_required')
+            public['value']['providers'][0]['key_env']='CONFIG_TEST_KEY'
+            self.assertEqual(self.save(public).status_code,409)
+
     def test_registration_subsidies_are_not_core_configuration(self):
         body=self.config();body.pop('restart_required');body['value']['registration_points']=1234
         self.assertEqual(self.save(body).status_code,409)
@@ -99,15 +114,16 @@ class ProviderConfigTests(unittest.TestCase):
         self.save(body).raise_for_status();self.assertTrue(self.config()['restart_required'])
         self.assertEqual(self.wallet()['balance'],10000)
 
-    def test_invalid_prices_and_lost_text_provider_rejected_atomically(self):
+    def test_invalid_prices_rejected_and_last_text_provider_can_be_disabled(self):
         for points in (-1,0.0000001,True):
             body=self.config();body.pop('restart_required');self.rate(body,'text','tokens',points,1000)
             self.assertEqual(self.save(body).status_code,409)
         body=self.config();body.pop('restart_required');body['value']['providers'][0]['enabled']=False
-        self.assertEqual(self.save(body).status_code,409);self.assertEqual(self.config()['revision'],0)
+        self.save(body).raise_for_status()
+        self.assertFalse(self.config()['value']['providers'][0]['available'])
         body=self.config();body.pop('restart_required');body['value']['providers'][0]['base_url']='https://user:secret@example.com'
         self.assertEqual(self.save(body).status_code,409)
-        self.assertEqual(self.config()['revision'],0)
+        self.assertEqual(self.config()['revision'],1)
 
 
 
@@ -120,7 +136,7 @@ class ProviderConfigTests(unittest.TestCase):
     def test_bootstrap_uses_database_without_model_file_or_original_environment(self):
         body=self.config();body.pop('restart_required');body['value']['providers'][0]['secret']='persisted-test-key'
         self.save(body).raise_for_status()
-        with patch.dict(os.environ,{'ORCHPACT_API_TOKEN':self.settings.token},clear=True):
+        with patch.dict(os.environ,{},clear=True):
             settings=Settings.load(self.root)
             self.assertEqual(settings.choose(['text'])['id'],'text')
             self.restart(settings)
@@ -129,7 +145,7 @@ class ProviderConfigTests(unittest.TestCase):
 
     def test_disabling_search_rejects_stale_agent_instead_of_silently_running_offline(self):
         body=self.config();body.pop('restart_required');body['value']['providers'][0]['search']=True
-        source=next(p for p in body['value']['providers'] if p['id']=='search:you');source['key_env']='SEARCH_TEST_KEY'
+        source=next(p for p in body['value']['providers'] if p['id']=='search:you');source['secret']='fixture-search-key'
         self.save(body).raise_for_status()
         job,ctx=self.start();unit=ctx['task']['unit_id']
         from orchpact.interfaces.context import from_actor
@@ -160,6 +176,7 @@ class ProviderConfigTests(unittest.TestCase):
     def restart(self,settings):
         self.admin.__exit__(None,None,None)
         self.app=create_app(settings,run_worker=False)
-        self.admin=TestClient(self.app).__enter__();self.admin.headers['Authorization']='Bearer '+self.settings.token
+        self.admin=TestClient(self.app).__enter__()
         self.s=self.app.state.service
+        self.admin.cookies.set('orchpact_session',self.s.access.session(self.admin_actor.user_id))
         self.user.close();self.user=TestClient(self.app)

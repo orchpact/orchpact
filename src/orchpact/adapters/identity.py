@@ -21,6 +21,8 @@ class Principal:
     application_key_id: str | None = None
     client: str = "web"
 
+USERNAME_PATTERN = r'^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$'
+
 principal = ContextVar('web_principal', default=None)
 _hash_slots = threading.BoundedSemaphore(2)
 
@@ -51,21 +53,30 @@ class Access:
                 limited = c.execute('SELECT count FROM auth_throttle WHERE key=%s',(key,)).fetchone()[0] > limit
             if limited: raise HTTPException(429,'尝试过于频繁，请稍后再试')
 
-    def session(self, user_id=None, admin=False, audience=""):
-            with self.db.tx() as c:
-                return self._create_session(c,user_id,admin,audience)
+    def session(self, user_id, audience=""):
+        with self.db.tx() as c:
+            return self._create_session(c, user_id, audience)
 
-    def _create_session(self,c,user_id,admin,audience):
-            token=secrets.token_urlsafe(48)
-            c.execute('DELETE FROM sessions WHERE expires<%s',(now(),))
-            c.execute('INSERT INTO sessions(hash,user_id,admin,expires,audience) VALUES(%s,%s,%s,%s,%s)',(digest(token),user_id,int(admin),now()+43200,audience))
-            return token
+    def _create_session(self, c, user_id, audience):
+        token = secrets.token_urlsafe(48)
+        c.execute('DELETE FROM sessions WHERE expires<%s', (now(),))
+        c.execute('INSERT INTO sessions(hash,user_id,expires,audience) VALUES(%s,%s,%s,%s)',
+                  (digest(token), user_id, now()+43200, audience))
+        return token
 
     def authenticate(self, token, audience=None):
-            with self.db.connect() as c:
-                row=c.execute('SELECT s.* FROM sessions s LEFT JOIN users u ON u.id=s.user_id WHERE s.hash=%s AND s.expires>%s AND (s.admin=1 OR u.disabled=0)',(digest(token),now())).fetchone()
-                if not row or (audience is not None and row['audience'] != audience):raise HTTPException(401,'请登录后继续')
-                return Principal(row['user_id'], bool(row['admin']))
+        with self.db.connect() as c:
+            row = c.execute("""
+                SELECT s.user_id,s.audience,
+                    s.user_id = (SELECT value FROM instance_metadata WHERE key='admin_user') AS admin,
+                    (SELECT value FROM instance_metadata WHERE key='admin_workspace') AS admin_workspace
+                FROM sessions s JOIN users u ON u.id=s.user_id
+                WHERE s.hash=%s AND s.expires>%s AND u.disabled=0
+                """, (digest(token),now())).fetchone()
+        if not row or (audience is not None and row['audience'] != audience):
+            raise HTTPException(401,'请登录后继续')
+        admin = bool(row['admin'])
+        return Principal(row['user_id'], admin, row['admin_workspace'] if admin else None)
 
     def revoke_session(self, token):
             with self.db.tx() as c:c.execute('DELETE FROM sessions WHERE hash=%s',(digest(token),))
@@ -95,7 +106,7 @@ class Access:
             if actor.admin:
                 if requested:
                     with self.db.connect() as c:self.member(c,requested,actor)
-                return replace(actor,workspace_id=requested)
+                return replace(actor,workspace_id=requested or actor.workspace_id)
             with self.db.connect() as c:
                 if not requested:
                     row=c.execute('SELECT id FROM workspaces WHERE owner_id=%s AND personal=1',(actor.user_id,)).fetchone()
@@ -130,11 +141,78 @@ class Access:
             c.execute('INSERT INTO workspace_members VALUES(%s,%s)',(workspace,user_id))
             return workspace
 
+    @staticmethod
+    def _primary(c):
+        return c.execute("""
+            SELECT m.value AS identity,u.id,u.username,u.password_set,
+                u.password<>'' AS has_password,
+                (SELECT value FROM instance_metadata WHERE key='admin_workspace') AS workspace_id
+            FROM instance_metadata m LEFT JOIN users u ON u.id=m.value
+            WHERE m.key='admin_user'
+            """).fetchone()
+
+    def _setup_state(self, c):
+        primary = self._primary(c)
+        if primary:
+            if not primary['id'] or not primary['workspace_id']:
+                return 'unavailable', primary
+            if primary['has_password'] and primary['password_set']:
+                return 'complete', primary
+            if primary['username'] == 'platform-admin' and not primary['has_password']:
+                others = c.execute('SELECT 1 FROM users WHERE id<>%s LIMIT 1', (primary['id'],)).fetchone()
+                return ('legacy' if others else 'first'), primary
+            return 'unavailable', primary
+        if c.execute('SELECT 1 FROM users LIMIT 1').fetchone():
+            return 'unavailable', None
+        return 'first', None
+
+    def setup_state(self):
+        with self.db.connect() as c:
+            return self._setup_state(c)[0]
+
+    def setup_admin(self, username, password, *, offline=False):
+        if not re.fullmatch(USERNAME_PATTERN, username) or re.fullmatch(r'1[3-9][0-9]{9}', username):
+            raise HTTPException(422, '请使用 3–64 个字符的有效非手机号账号名')
+        if not 12 <= len(password) <= 128:
+            raise HTTPException(422, '密码须为 12–128 个字符')
+        state = self.setup_state()
+        if state not in ('first','legacy') or state == 'legacy' and not offline:
+            raise HTTPException(409, '管理员已设置或需要在实例本机初始化')
+        hashed = password_hash(password)
+        username = username.lower()
+        with self.db.tx() as c:
+            # The write lock serializes competing initializations and registration.
+            state, primary = self._setup_state(c)
+            if state not in ('first','legacy') or state == 'legacy' and not offline:
+                raise HTTPException(409, '管理员已设置或需要在实例本机初始化')
+            if primary:
+                user, workspace = primary['id'], primary['workspace_id']
+                if c.execute('SELECT 1 FROM users WHERE username=%s AND id<>%s', (username,user)).fetchone():
+                    raise HTTPException(409, '账号名已被使用')
+                c.execute('UPDATE users SET username=%s,password=%s,password_set=1,disabled=0 WHERE id=%s',
+                          (username,hashed,user))
+                c.execute('DELETE FROM sessions WHERE user_id=%s', (user,))
+            else:
+                user = ident()
+                c.execute('INSERT INTO users(id,username,password,created) VALUES(%s,%s,%s,%s)',
+                          (user,username,hashed,now()))
+                workspace = self.new_workspace(c,user,'平台工作空间',True)
+                self.wallets.create(c,user)
+                c.execute("INSERT INTO instance_metadata VALUES('admin_user',%s),('admin_workspace',%s)",
+                          (user,workspace))
+            actor = Principal(user,True,workspace)
+            if getattr(self,'audit',None):
+                self.audit.record(c,actor,'account.administrator_initialized','user',user,
+                                  workspace_id=workspace,after={'converted':primary is not None})
+            return actor
+
     def register(self,username,password,invite,audience=""):
             if re.fullmatch(r'1[3-9][0-9]{9}',username):
                 raise HTTPException(422,'请使用非手机号的账号名')
             hashed=password_hash(password)
             with self.db.tx() as c:
+                if self._setup_state(c)[0] != 'complete':
+                    raise HTTPException(409,'请先创建首个账号')
                 invitation=c.execute('SELECT id FROM invitations WHERE hash=%s AND workspace_id IS NULL AND revoked=0 AND used_by IS NULL AND expires>%s',(digest(invite),now())).fetchone()
                 if not invitation:raise HTTPException(409,'注册邀请无效、已使用或已过期')
                 user=ident()
@@ -145,7 +223,7 @@ class Access:
                 self.new_workspace(c,user,'私人空间',True)
                 self.wallets.create(c,user)
                 c.execute('UPDATE invitations SET used_by=%s WHERE id=%s',(user,invitation['id']))
-                return self._create_session(c,user,False,audience)
+                return self._create_session(c,user,audience)
 
     def invite(self,workspace=None):
             actor=principal.get()
@@ -204,7 +282,7 @@ class Access:
                 if not old:raise HTTPException(401,'当前会话已失效，请重新登录')
                 c.execute('UPDATE users SET password=%s,password_set=1 WHERE id=%s',(hashed,user))
                 c.execute('DELETE FROM sessions WHERE user_id=%s',(user,))
-                token=self._create_session(c,user,False,old['audience'])
+                token=self._create_session(c,user,old['audience'])
                 if getattr(self,'audit',None):self.audit.record(c,actor,'account.password_changed','user',user,
                     before={'password_set':True},after={'password_set':True,'sessions_revoked':True},request_id=request_id)
             return token

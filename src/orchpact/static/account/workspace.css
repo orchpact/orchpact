@@ -1,6 +1,23 @@
-.workspace-bar{position:fixed;bottom:14px;left:14px;z-index:1000;display:flex;align-items:center;gap:10px;padding:10px 14px;background:#202e29;color:#f6f4e9;border:1px solid #8d9e8c;border-radius:8px;box-shadow:0 5px 20px #0002;font:12px Georgia,"Songti SC",serif;max-width:calc(100vw - 28px)}.workspace-bar>span{font:9px monospace;letter-spacing:.1em;opacity:.65}.workspace-bar select{max-width:180px;border:0;background:#202e29;color:#fff;font:inherit;padding:4px}.workspace-bar a{color:#e7dfbc;text-decoration:none;white-space:nowrap}@media(max-width:600px){.workspace-bar>span{display:none}.workspace-bar{bottom:8px;left:8px;font-size:11px}.workspace-bar select{max-width:135px}}
+@import url("/static/brand/identity-tokens.css");
 
-.workspace-bar{flex-wrap:wrap}.workspace-credit-info summary{cursor:pointer}.workspace-credit-info p{position:absolute;bottom:100%;left:0;max-width:min(440px,85vw);padding:16px;background:#202e29;border:1px solid #8d9e8c;border-radius:8px;font-size:12px;line-height:1.8;margin-bottom:10px;color:#f6f4e9}
-.workspace-bar .workspace-credit-info{display:block;flex:0 0 auto;width:auto;max-width:none;padding:0;margin:0;border:0;background:transparent;color:inherit}.workspace-bar .workspace-credit-info summary{display:list-item;width:auto;margin:0;padding:0;border:0;font:inherit;color:inherit;list-style:revert}.workspace-bar .workspace-credit-info summary::after{content:none}
-#toast{z-index:1100}
-.workspace-bar{left:auto;right:14px}.workspace-bar-clearance{height:110px;pointer-events:none}.workspace-credit-info p{left:auto;right:0}@media(max-width:600px){.workspace-bar{left:auto;right:8px}.workspace-bar-clearance{height:130px}}
+.workspace-bar {
+  position:fixed;z-index:1000;right:14px;bottom:14px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;
+  max-width:calc(100vw - 28px);padding:10px 14px;border:1px solid var(--op-control);border-radius:8px;
+  background:var(--op-surface);color:var(--op-text);font:14px/1.5 "Instrument Sans","PingFang SC",sans-serif;
+}
+.workspace-bar > span {font-size:.8rem;color:var(--op-muted);}
+.workspace-bar select {max-width:180px;padding:4px;border:1px solid var(--op-control);border-radius:4px;background:var(--op-surface);color:var(--op-text);font:inherit;}
+.workspace-bar a {color:var(--op-link);text-decoration:underline;text-underline-offset:.15em;white-space:nowrap;}
+.workspace-bar :focus-visible {outline:2px solid var(--op-focus);outline-offset:3px;}
+.workspace-bar .workspace-credit-info {display:block;flex:0 0 auto;width:auto;max-width:none;padding:0;margin:0;border:0;background:transparent;color:inherit;}
+.workspace-credit-info summary {display:list-item;width:auto;margin:0;padding:0;border:0;font:inherit;color:inherit;cursor:pointer;list-style:revert;}
+.workspace-credit-info summary::after {content:none;}
+.workspace-credit-info p {position:absolute;bottom:100%;right:0;max-width:min(440px,85vw);padding:12px 16px;border:1px solid var(--op-control);border-radius:6px;background:var(--op-surface);color:var(--op-text);line-height:1.65;}
+.workspace-bar-clearance {height:110px;pointer-events:none;}
+#toast {z-index:1100;}
+@media(max-width:600px) {
+  .workspace-bar {right:8px;bottom:8px;font-size:.8rem;}
+  .workspace-bar>span {display:none;}
+  .workspace-bar select {max-width:135px;}
+  .workspace-bar-clearance {height:130px;}
+}

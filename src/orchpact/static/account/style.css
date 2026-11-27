@@ -1,3 +1,57 @@
-:root{color-scheme:light;--paper:#fffdf7;--ink:#26352d;--line:#d7d8c8;--accent:#b45d39}*{box-sizing:border-box}body{margin:0;color:var(--ink);background:#eeeee4;font-family:Georgia,"Songti SC",serif}header{height:86px;max-width:1260px;margin:auto;padding:28px 38px;display:flex;justify-content:space-between;border-bottom:1px solid var(--line);gap:16px}a{color:inherit}.wordmark img{display:block}header>span,.eyebrow{font:11px monospace;letter-spacing:.13em}main{max-width:1260px;margin:70px auto 50px;padding:0 38px;display:grid;grid-template-columns:.9fr 1.1fr;gap:70px;align-items:start}.intro{padding-top:32px;position:sticky;top:30px}.intro h1{font-size:clamp(34px,4vw,56px);font-weight:400;line-height:1.4;letter-spacing:.02em;margin:30px 0}.intro>p:not(.eyebrow){line-height:1.9;color:#687469;font-size:15px}.principle{display:flex;flex-direction:column;gap:16px;margin-top:55px;border-left:2px solid var(--accent);padding-left:18px;font-size:13px;letter-spacing:.08em}.paper{background:var(--paper);border:1px solid var(--line);padding:36px;box-shadow:5px 7px 0 #dfdfd1}.paper h2{font-size:28px;font-weight:400;margin:24px 0}.tabs{display:flex;gap:20px;border-bottom:1px solid var(--line)}.tabs button{background:none;border:0;padding:12px 0}.tabs .active{color:var(--accent);border-bottom:2px solid var(--accent)}label{display:block;font-size:13px;margin:18px 0}input,textarea{font:15px Georgia,"Songti SC",serif;border:1px solid var(--line);border-radius:2px;background:#fffefb;color:var(--ink);padding:12px;width:100%;margin-top:8px}input:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid #b45d39;outline-offset:3px}button{cursor:pointer;font:13px Georgia,"Songti SC",serif;border:1px solid var(--line);padding:11px 14px;background:#f3f2e8;color:var(--ink);border-radius:2px}button:disabled{opacity:.5;cursor:wait}.primary{background:var(--ink);color:#fffdf7;border:1px solid var(--ink);width:100%;margin-top:12px;padding:15px}.quiet{border:0;background:none;padding:4px;text-decoration:underline}.note{font-size:12px;line-height:1.9;color:#758071}details{margin:24px 0 8px;border-top:1px solid var(--line);padding-top:18px}summary{cursor:pointer;font-size:13px}footer{max-width:1260px;margin:35px auto;padding:25px 38px;border-top:1px solid var(--line);font-size:12px;color:#758071}.space{padding:17px 0;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;justify-content:space-between}.space-title{font-size:16px;overflow-wrap:anywhere}.space small{display:block;color:#788172;font-size:11px;margin-top:6px}.space-actions{display:flex;gap:6px;flex-shrink:0}.space-actions a{padding:9px;border:1px solid var(--line);font-size:12px;text-decoration:none}.section-top,.inline{display:flex;gap:10px;align-items:center;justify-content:space-between}.inline{margin-top:24px}.inline input{margin:0}.inline button{white-space:nowrap}#message{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:white;padding:14px 22px;max-width:90vw;z-index:5;font:13px sans-serif}#message:empty{display:none}dialog{background:var(--paper);color:var(--ink);padding:32px;border:1px solid var(--line);max-width:520px;width:90%}dialog::backdrop{background:#18291f66}dialog textarea{min-height:100px;resize:vertical;margin-bottom:20px;overflow-wrap:anywhere}.member{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);font-size:13px}.member button{font-size:12px;padding:7px}.warning{color:#a44228}hr{border:0;border-top:1px solid var(--line);margin:26px 0}[hidden]{display:none!important}@media(max-width:850px){main{margin-top:28px;grid-template-columns:1fr;gap:30px;padding:0 22px}.intro{position:static;padding:0}.intro h1{font-size:34px;margin:15px 0}.intro h1 br{display:none}.principle{flex-direction:row;margin-top:20px;gap:15px;font-size:11px}.paper{padding:24px}header{padding:22px;height:auto;font-size:12px}header>span{font-size:9px}.space{align-items:start;flex-direction:column}.space-actions{width:100%}.space-actions a{flex:1;text-align:center}footer{padding:22px;font-size:11px}}
+#account-login:focus { outline: none; }
+.account-view { container-type: inline-size; }
+.account-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.account-grid > .panel { margin: 0; min-width: 0; }
+.account-grid:has(.account-wallet[hidden]) { grid-template-columns: 1fr; }
+.account-wallet { grid-row: 1; background: var(--accent-fill); }
+.account-wallet h2 { margin-bottom: 24px; }
+.account-wallet .number { margin-top: 9px; overflow-wrap: anywhere; }
+.account-wallet .actions { margin-top: 20px; }
+.account-wallet button { color: var(--accent); }
+.account-wallet .credit-facts { margin-top: 22px; }
+.credit-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.account-wallet .credit-facts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr)); }
+.credit-facts dt { color: var(--muted); font-size: 12px; font-weight: 650; }
+.credit-facts dd { margin: 3px 0 0; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.account-list > .account-row + .account-row { border-top: 1px solid var(--line); }
+.account-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; min-width: 0; padding: 12px 0; }
+.account-row small { display: block; margin-top: 2px; }
+.account-row .row-label { flex: 1 1 150px; min-width: 0; overflow-wrap: anywhere; }
+.account-row .actions { flex: none; max-width: 100%; }
+.account-row button[aria-expanded=true] { color: var(--accent); background: var(--accent-fill); border-color: transparent; }
+.account-admin { margin-top: 16px; }
+.account-admin h2 { margin: 0; }
+.account-admin > .row { flex-wrap: wrap; margin-bottom: 11px; }
+.space-forms { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; padding-top: 14px; border-top: 1px solid var(--line); }
+.space-forms > details { flex: 1 1 180px; }
+.account-disclosure > summary { cursor: pointer; min-height: 42px; padding: 9px 12px; border-radius: 12px; background: var(--surface-subtle); color: var(--accent); font-weight: 650; font-size: 13px; }
+.account-disclosure form { margin: 11px 0 4px; }
+.account-form { display: grid; gap: 12px; }
+.account-form label { min-width: 0; font-size: 13px; font-weight: 650; }
+.account-form input { display: block; width: 100%; min-width: 0; min-height: 42px; margin-top: 4px; }
+.account-form button { justify-self: start; }
+.account-members { margin-block: 16px 0; border-top: 1px solid var(--line); padding-top: 15px; }
+.account-members h3 { margin: 0 0 6px; }
+.account-members h4 { margin: 14px 0 0; }
+.account-status { margin: 7px 0 16px; padding: 8px 12px; border-radius: 12px; background: var(--surface-subtle); overflow-wrap: anywhere; }
+.account-status:empty { display: none; }
 
-#credit-dialog{width:min(760px,94vw);max-height:90vh;overflow:auto}#credit-summary{margin:20px 0;padding:16px;border:1px solid var(--line)}.credit-entry{padding:14px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}.credit-entry p{font-size:13px;margin:8px 0}#credit-body form{padding:12px 0}#credit-body h3{margin-top:24px}
+#invite-dialog { max-width: 460px; }
+#credit-dialog { padding-top: 0; }
+#credit-dialog .dialog-head { position: sticky; top: 0; z-index: 1; padding-block: 17px; background: var(--paper); }
+#credit-dialog .account-form { max-width: 29rem; }
+.credit-section { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 14px; }
+.credit-section h3 { margin: 0 0 8px; }
+.credit-entry { padding: 10px 0; overflow-wrap: anywhere; }
+.credit-entry + .credit-entry { border-top: 1px solid var(--line); }
+.credit-entry p { margin: 4px 0; }
+.credit-entry form { margin: 8px 0 4px; }
+@container (min-width: 680px) {
+  .account-grid { grid-template-columns: minmax(0, 1.65fr) minmax(235px, 1fr); }
+  .account-wallet { grid-row: auto; }
+}
+@media (max-width: 480px) {
+  .account-row { align-items: flex-start; flex-direction: column; }
+  .account-row .row-label, .account-row .actions { flex: auto; }
+  .account-row :is(button, a), .space-forms summary { min-height: 43px; }
+}

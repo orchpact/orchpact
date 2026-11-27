@@ -1,5 +1,5 @@
-from orchpact.testing import database_url_for
-from account_fixtures import create_user, register_package
+from orchpact.testing import database_url_for, fixture_provider_credentials
+from account_fixtures import bootstrap_admin, create_user, register_package
 import json
 import os
 from pathlib import Path
@@ -25,9 +25,13 @@ class SearchTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(); self.root = Path(self.tmp.name)
         self.config = dict(mode='aggregate', providers=[dict(id=n, key_env='SEARCH_TEST_'+n.upper()) for n in ('deepseek', 'you', 'tavily')], max_results=5, fetch_top=0)
         profile = dict(id='research', kind='text', model='test', key_env='TEST_KEY', base_url='https://example.invalid', capabilities=['text','json','search'], search_config=self.config)
-        self.settings = Settings(self.root, 'test-search-admin-'*3, {'research':profile}, self.root/'var',database_url=database_url_for(self.root/'var'))
+        self.settings = Settings(self.root,{'research':profile}, self.root/'var',database_url=database_url_for(self.root/'var'))
         self.app = create_app(self.settings, run_worker=False)
-        self.admin = TestClient(self.app).__enter__(); self.s = self.app.state.service; self.admin.headers['Authorization'] = 'Bearer '+self.settings.token
+        self.admin = TestClient(self.app).__enter__(); self.s = self.app.state.service; bootstrap_admin(self.s,self.admin)
+        fixture_provider_credentials(self.s,default_model='fixture-text-key',search={
+            'search:deepseek':'fake-deepseek','search:you':'fake-you','search:tavily':'fake-tavily',
+            'search:deepseek:fetch':'fake-deepseek',
+        })
         register_package(self.admin)
         self.user = TestClient(self.app)
         create_user(self.s,self.user,'search-user','test-password-1234')
@@ -35,11 +39,10 @@ class SearchTests(unittest.TestCase):
         self.project = self.user.post('/api/v1/apps/demo/runs', headers={'Idempotency-Key':'search'}, json={'operation':'run','input':{}}).json()['id']
         self.ctx = self.s.claim(); self.provider = Providers(self.s)
         self.config = self.ctx['snapshot']['profile']['search_config']
-        self.env = patch.dict(os.environ, {p['key_env']:'fake-'+p['id'] for p in self.config['providers']}); self.env.start()
         self.requests = []
 
     def tearDown(self):
-        self.env.stop(); self.user.close(); self.admin.__exit__(None,None,None); self.tmp.cleanup()
+        self.user.close(); self.admin.__exit__(None,None,None); self.tmp.cleanup()
 
     def transport(self, handler):
         def send(request):
@@ -222,11 +225,13 @@ class SearchTests(unittest.TestCase):
         with self.transport(self.success),self.assertRaises(ValueError):self.provider.search(self.ctx,'核验')
         self.assertEqual(self.requests,[]); self.assertEqual(self.rows(),[])
 
-    def test_old_snapshot_keeps_tavily_adapter(self):
-        self.ctx['snapshot']['profile'].pop('search_config'); self.ctx['snapshot']['profile']['search_key_env']='SEARCH_TEST_TAVILY'
-        with self.transport(self.success):result=self.provider.search(self.ctx,'旧任务')
-        self.assertEqual([r.url.host for r in self.requests],['api.tavily.com'])
-        self.assertEqual(result['sources'][0]['providers'],['tavily'])
+    def test_old_snapshot_cannot_use_environment_credentials(self):
+        self.ctx['snapshot']['profile']['search_config'] = dict(mode='aggregate',providers=[
+            dict(id='tavily',key_env='SEARCH_TEST_TAVILY')],max_results=5,fetch_top=0)
+        with patch.dict(os.environ,{'SEARCH_TEST_TAVILY':'ignored'}),self.transport(self.success),self.assertRaisesRegex(RuntimeError,'后台凭据'):
+            self.provider.search(self.ctx,'旧任务')
+        self.assertEqual(self.requests,[])
+        self.assertEqual(self.rows(),[])
 
 
 class SearchConfigTests(unittest.TestCase):
@@ -237,24 +242,32 @@ class SearchConfigTests(unittest.TestCase):
         rows=normalize('deepseek',{'results':[{'url':'http://127.0.0.1/x'},{'url':'https://example.com/x?id=1'},{'url':'https://example.com/x?id=2'}]},5)
         self.assertEqual(len(merge([rows])),2)
 
-    def test_auto_sources_missing_explicit_key_and_invalid_configuration(self):
+    def test_source_presets_are_independent_of_environment_and_validate_options(self):
         with patch.dict(os.environ,{},clear=True):
-            self.assertEqual(configuration({})['providers'],[])
-            with self.assertRaisesRegex(ValueError,'YDC_API_KEY'):configuration({'providers':{'you':{'enabled':True}}})
+            self.assertEqual(configuration({})['providers'],[dict(id=name) for name in ('deepseek','you','tavily')])
+            self.assertEqual(configuration({'providers':{'you':{'enabled':False}}})['providers'],[{'id':'deepseek'},{'id':'tavily'}])
         for options in ({'mode':'random'},{'sources':['you','you']},{'sources':['unknown']},{'max_results':True},{'fetch_top':4},{'fetch_top':-1},{'typo':1}):
             with self.subTest(options=options),self.assertRaises(ValueError):configuration({'search':options})
         with self.assertRaises(ValueError):configuration({'providers':{'unknown':{}}})
 
-    def test_settings_can_use_deepseek_without_tavily_and_freezes_sources(self):
+    def test_startup_does_not_activate_search_or_models_from_environment(self):
+        from orchpact.bootstrap import Instance
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); database_url_for(root/'var'); (root/'config').mkdir()
             (root/'config/models.toml').write_text('[models.research]\nkind="text"\nmodel="test"\nbase_url="https://example.invalid"\nkey_env="DEEPSEEK_API_KEY"\njson_mode=true\nsearch=true\n')
             (root/'config/search.toml').write_text('[search]\nsources=["deepseek","you","tavily"]\n')
-            with patch.dict(os.environ,{'ORCHPACT_API_TOKEN':'test-'*8,'DEEPSEEK_API_KEY':'fake'},clear=True):
-                s=Settings.load(root)
-                self.assertEqual(s.profiles['research']['search_config']['providers'],[{'id':'deepseek','key_env':'DEEPSEEK_API_KEY'}])
-                self.assertIn('search',s.catalog()[0]['capabilities'])
-                self.assertNotIn('search_config',s.catalog()[0])
-            with patch.dict(os.environ,{'ORCHPACT_API_TOKEN':'test-'*8,'DEEPSEEK_API_KEY':'fake','YDC_API_KEY':'fake-you'},clear=True):
-                self.assertEqual(len(Settings.load(root).profiles['research']['search_config']['providers']),2)
-            self.assertEqual(len(s.profiles['research']['search_config']['providers']),1)
+            with patch.dict(os.environ,{'DEEPSEEK_API_KEY':'ignored','YDC_API_KEY':'ignored'}):
+                instance=Instance(Settings.load(root)).open()
+                try:
+                    config=instance.service.configuration
+                    self.assertEqual(instance.service.settings.catalog(),[])
+                    self.assertEqual(config.search_config()['providers'],[])
+                    body=config.public()
+                    for row in body['value']['providers']:
+                        self.assertFalse(row['secret_configured'])
+                        if row['id'] in ('research','search:deepseek'):row['secret']='fixture-managed-key'
+                    config.save(body['revision'],body['value'],'fixture')
+                    frozen=instance.service.settings.choose(['search'])
+                    self.assertEqual([row['id'] for row in frozen['search_config']['providers']],['deepseek'])
+                    self.assertNotIn('fixture-managed-key',json.dumps(instance.service.settings.catalog()))
+                finally:instance.close()

@@ -1,5 +1,53 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>账号与工作空间</title><link rel="icon" href="/static/account/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/account/style.css"></head><body>
-<header><a class="wordmark" href="/account/"><img src="/static/account/orchpact-logo.svg" alt="Orchpact" width="127" height="30"></a><span>PRIVATE BY DEFAULT</span></header>
-<main data-account-page><section class="intro"><p class="eyebrow">A PLACE FOR YOUR WORK</p><h1>自己的灵感，<br>也能一起完成。</h1><p>私人空间只属于你。创建协作空间，邀请朋友，<br>一起积累故事、调研和制作资料。</p><div class="principle"><span>01 / 私人起步</span><span>02 / 按空间共享</span><span>03 / 随时切换</span></div></section>
-<section id="login-panel" class="paper" hidden><div class="tabs"><button type="button" id="login-tab" class="active" aria-pressed="true">登录</button><button type="button" id="register-tab" aria-pressed="false">受邀注册</button></div><h2 id="login-title">回到你的空间</h2><form id="login-form"><label>账号<input name="username" autocomplete="username" pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}" required placeholder="输入账号"></label><label>密码<input name="password" type="password" autocomplete="current-password" minlength="12" maxlength="128" required placeholder="至少12个字符"></label><label id="invite-field" hidden>注册邀请码<input name="invitation" autocomplete="off" minlength="20" maxlength="200" disabled placeholder="输入管理员发放的邀请码"></label><button class="primary" type="submit" id="login-submit">登录并继续 ↗</button></form><p class="note">使用 Orchpact（序契）账号和密码登录，或凭管理员发放的邀请码注册。</p><details><summary>管理员登录</summary><form id="admin-form"><label>管理凭据<input name="token" type="password" autocomplete="off" required></label><button type="submit">进入管理账号</button></form></details></section>
-<section id="workspace-panel" class="paper wide" hidden><div class="section-top"><p class="eyebrow" id="identity"></p><button id="logout" class="quiet">退出登录</button></div><h2>你的工作空间</h2><p class="note">共享以空间为边界。加入其他空间，不会分享你的私人内容。</p><div id="spaces"></div><form id="create-form" class="inline"><input name="name" maxlength="80" required aria-label="新空间名称" placeholder="为新的协作空间起个名字"><button type="submit">＋ 创建空间</button></form><details><summary>接受空间邀请</summary><form id="join-form"><label>空间邀请码<input name="code" required autocomplete="off"></label><button type="submit">加入协作空间</button></form></details><div id="members"></div><div id="admin-tools" hidden><hr><h3>平台配置</h3><p class="note">连接文本、搜索与图片能力，管理每个提供者的消耗积分。</p><p><a href="/admin/#providers">提供者与积分配置 ↗</a></p><hr><h3>用户账号</h3><div id="users"></div></div></section></main><p id="message" role="status" aria-live="polite"></p><dialog id="invite-dialog"><h2>邀请已生成</h2><p>一次有效，7天后过期。请只发给你想邀请的人。</p><textarea id="invite-code" readonly aria-label="邀请码"></textarea><button id="copy-code">复制邀请码</button><button id="close-invite">关闭</button></dialog><footer>工作流 · 应用 · 协作 &nbsp; / &nbsp; 一个账号，多个工作空间</footer><script type="module" src="/static/account/app.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>登录 Orchpact</title>
+  <link rel="icon" href="/static/brand/favicon.ico" sizes="any">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/brand/apple-touch-icon.png">
+  <script src="/static/appearance.js"></script>
+  <link rel="stylesheet" href="/static/brand/identity-tokens.css">
+  <link rel="stylesheet" href="/static/appearance.css">
+  <link rel="stylesheet" href="/static/ui/admin.css">
+  <link rel="stylesheet" href="/static/kernel/style.css">
+  <link rel="stylesheet" href="/static/account/entry.css">
+</head>
+<body class="account-login-page">
+  <a class="skip-link" href="#account-login">跳到主要内容</a>
+  <div class="entry-page">
+    <header class="entry-mast">
+      <a href="https://orchpact.github.io/" aria-label="Orchpact 官网">
+        <span class="app-wordmark">
+        <img data-wordmark="light" src="/static/brand/orchpact-logo.svg" width="322" height="80" alt="Orchpact">
+        <img data-wordmark="dark" src="/static/brand/orchpact-logo-dark.svg" width="322" height="80" alt="Orchpact">
+      </span>
+      </a>
+      <span>自托管工作台</span>
+    </header>
+    <main id="account-login" class="entry-main" tabindex="-1" aria-busy="true">
+      <section class="entry-card" aria-labelledby="login-title">
+        <div id="login-controls"><h1 id="login-title">登录工作台</h1><p class="entry-hint">正在读取实例状态…</p></div>
+        <form id="login-form" method="post" action="/api/v1/auth/login" hidden>
+          <label class="entry-label" for="entry-username">账号</label>
+          <input id="entry-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]{2,63}" required>
+          <div id="login-fields"></div>
+          <div id="login-action"></div>
+        </form>
+        <div id="login-feedback" aria-live="polite"></div>
+        <noscript>登录工作台需要启用 JavaScript。</noscript>
+      </section>
+    </main>
+    <footer class="entry-project">
+      <span>开源自托管工作流引擎</span>
+      <nav aria-label="项目资料">
+        <a href="https://orchpact.github.io/">项目官网</a>
+        <a href="https://orchpact.github.io/docs/">使用文档</a>
+        <a href="https://github.com/orchpact/orchpact">GitHub</a>
+      </nav>
+    </footer>
+  </div>
+  <script type="module" src="/static/ui/login.js"></script>
+</body>
+</html>

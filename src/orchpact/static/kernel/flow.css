@@ -1,0 +1,104 @@
+.flow-workbench, .flow-split, .flow-canvas {min-width:0}
+.flow-header, .flow-top {display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap}
+.flow-header {margin-bottom:1rem}
+.flow-header h1 {margin:.2rem 0 0;font-size:clamp(1.6rem,4vw,2.5rem);overflow-wrap:anywhere}
+.flow-header output, .flow-top output {color:var(--op-muted);font-size:.85rem}
+.flow-top {margin-bottom:.6rem}
+.flow-top label {margin:0;display:flex;align-items:center;gap:.55rem}
+.flow-split {display:grid;grid-template-columns:minmax(0,1fr) minmax(240px,290px);align-items:stretch;gap:1px;background:var(--op-line);border:1px solid var(--op-line);border-radius:12px;overflow:hidden}
+.flow-canvas {background:var(--op-surface);border-radius:inherit}
+.flow-tools {display:flex;align-items:center;gap:.3rem;padding:.36rem .65rem;min-height:3rem;border-bottom:1px solid var(--op-line);font-size:.82rem;color:var(--op-text)}
+.flow-tools button {min-height:2rem;min-width:2rem;padding:.3rem .55rem}
+.flow-tools button[data-zoom] {padding:0}
+.flow-tools-separator {width:1px;height:1rem;margin:0 .2rem;background:var(--op-line)}
+.flow-tools output {min-width:3.25rem;text-align:center;color:var(--op-muted);font-variant-numeric:tabular-nums}
+.flow-tools [aria-pressed=true] {color:var(--op-link);background:var(--op-selected-bg);border-color:var(--op-edge-selected)}
+.flow-hint {margin-inline-start:auto;color:var(--op-muted)}
+.flow-viewport {position:relative;overflow:hidden;height:clamp(390px,65dvh,890px);background:var(--op-page);touch-action:none;isolation:isolate}
+.flow-viewport:focus-visible {outline:2px solid var(--op-focus);outline-offset:-3px}
+.flow-canvas .react-flow {
+  --xy-background-color:var(--op-page);
+  --xy-selection-background-color:color-mix(in srgb,var(--op-link) 10%,transparent);
+  --xy-selection-border:1px solid var(--op-edge-selected);
+  --xy-handle-background-color:var(--op-surface);
+  --xy-handle-border-color:var(--op-control);
+  --xy-attribution-background-color:var(--op-surface);
+}
+.flow-canvas .react-flow__attribution a {color:var(--op-muted)}
+.flow-canvas .react-flow__nodesselection-rect {pointer-events:none}
+.flow-canvas .react-flow__node-stage {color:var(--op-text);width:216px;height:94px}
+.flow-node {
+  --stage-fg:var(--op-neutral-fg);--stage-bg:var(--op-neutral-bg);
+  position:relative;width:100%;height:100%;border:1px solid var(--op-control);border-radius:10px;
+  color:var(--op-text);background:var(--op-surface);box-sizing:border-box;
+  box-shadow:0 2px 6px color-mix(in srgb,var(--op-text) 8%,transparent)
+}
+.flow-node[data-state=running] {--stage-fg:var(--op-info-fg);--stage-bg:var(--op-info-bg)}
+.flow-node:is([data-state=awaiting_approval],[data-state=review],[data-state=partial],[data-state=waived],[data-state=unknown]) {--stage-fg:var(--op-warning-fg);--stage-bg:var(--op-warning-bg)}
+.flow-node:is([data-state=failed],[data-state=interrupted],[data-state=rejected]) {--stage-fg:var(--op-danger-fg);--stage-bg:var(--op-danger-bg)}
+.flow-node[data-state=accepted] {--stage-fg:var(--op-success-fg);--stage-bg:var(--op-success-bg)}
+.flow-node[data-kind=group] {border-style:dashed}
+.flow-node:is(.is-selected,.is-source) {outline:2px solid var(--op-edge-selected);outline-offset:2px}
+.flow-node.is-source {outline-style:dashed}
+.flow-canvas .flow-node-body {
+  display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:3px;align-content:start;align-items:start;
+  justify-content:stretch;text-align:left;width:100%;height:100%;border:0;padding:8px 12px 7px;
+  border-radius:inherit;background:transparent;box-shadow:none;color:var(--op-text);cursor:inherit;white-space:normal;
+}
+.flow-canvas .flow-node-body:hover {background:var(--op-subtle)}
+.flow-node-body:focus-visible {outline:2px solid var(--op-focus);outline-offset:4px}
+.flow-node-heading {display:flex;justify-content:space-between;align-items:center;gap:4px;min-width:0}
+.flow-node-type, .flow-node-picked {display:inline-flex;align-items:center;gap:4px;min-width:0;font-size:11px;line-height:1.2;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flow-node-type {color:var(--op-muted)}
+.flow-node-picked {color:var(--op-link);flex:none}
+.flow-node :is(.flow-node-type,.flow-node-picked,.flow-plus) svg {width:13px;height:13px;flex:none}
+.flow-node-body strong {font-size:14px;line-height:1.33;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;align-self:center}
+.flow-node-body small {justify-self:start;max-width:100%;line-height:1.3;padding:.06rem .35rem;border-radius:4px;color:var(--stage-fg);background:var(--stage-bg);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flow-node .flow-port {top:50%;min-width:0;min-height:0;width:14px;height:14px;border:2px solid var(--op-edge);border-radius:50%;background:var(--op-surface);touch-action:none;cursor:crosshair}
+.flow-node .flow-in {left:0}
+.flow-node .flow-out {right:0}
+.flow-node .flow-port:hover, .flow-node .flow-port:focus-visible {background:var(--op-selected-bg);border-color:var(--op-edge-selected)}
+.flow-node .flow-port::after {position:absolute;inset:-5px;content:''}
+.flow-node .flow-port-passive {visibility:hidden;pointer-events:none}
+.flow-node .flow-plus {position:absolute;display:grid;place-items:center;z-index:1;right:0;top:78%;transform:translate(50%,-50%);width:23px;height:23px;padding:0;min-width:0;min-height:0;border:1px solid var(--op-edge);border-radius:7px;background:var(--op-surface);color:var(--op-link);box-shadow:none}
+.flow-node .flow-plus:hover {background:var(--op-selected-bg)}
+.flow-canvas :is(.flow-tools button,.flow-port,.flow-plus,.flow-empty button):focus-visible {outline:2px solid var(--op-focus);outline-offset:3px}
+.flow-feedback {margin:0;padding:.4rem .7rem;min-height:1.7rem;font-size:.82rem;color:var(--op-muted)}
+.flow-feedback:empty {display:none}
+.flow-inspector {min-width:0;background:var(--op-surface);padding:1rem;max-height:calc(clamp(390px,65dvh,890px) + 4.4rem);overflow:auto;overscroll-behavior:contain}
+.flow-inspector h2 {font-size:1.15rem;overflow-wrap:anywhere;margin:.15rem 0 .8rem}
+.flow-inspector header span {color:var(--op-link);font-size:.8rem}
+.flow-inspector label,.flow-inspector .task {overflow-wrap:anywhere}
+.flow-inspector textarea,.flow-inspector select,.flow-inspector input:not([type=checkbox]) {display:block;width:100%;margin:.3rem 0 .8rem}
+.flow-inspector .task {padding-top:.2rem}
+.flow-dependencies {padding:.55rem .7rem;border:1px solid var(--op-line);border-radius:8px;margin:.5rem 0 .8rem;min-width:0}
+.flow-dependencies label {display:flex;align-items:center;gap:.4rem;margin:0;font-size:.86rem;line-height:1.5}
+.flow-dependencies input {margin:.35rem 0;accent-color:var(--op-action)}
+.flow-buttons {display:flex;flex-direction:column;align-items:stretch;gap:.45rem}
+.flow-buttons:empty {display:none}
+.flow-buttons button {font-size:.85rem}
+.flow-run-panel {margin-bottom:1rem}
+.flow-edit-bar {justify-content:flex-start;padding:.35rem 0 .6rem}
+.flow-edit-bar .actions {display:flex;flex-wrap:wrap;gap:.4rem;margin:0}
+.flow-edit-bar button {min-height:2.25rem;padding:.35rem .75rem}
+.flow-edit-bar [data-flow-package]:enabled {color:var(--op-link);border-color:var(--op-edge-selected)}
+.flow-empty {position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.flow-empty button {display:flex;height:auto;gap:.6rem;padding:.85rem 1.25rem;border:1px dashed var(--op-control);color:var(--op-link);background:var(--op-surface);pointer-events:auto}
+.flow-selected-list {list-style:none;padding:0;margin:0 0 1rem}
+.flow-selected-list li {display:grid;padding:.45rem 0;border-bottom:1px solid var(--op-line);overflow-wrap:anywhere}
+.flow-selected-list strong {font-size:.85rem}
+.flow-selected-list small {font-size:.8rem}
+.flow-execution {margin:.55rem 0 .85rem;font-size:.86rem}
+.flow-execution summary {cursor:pointer;color:var(--op-muted)}
+@media (max-width:750px) {
+  .flow-split {grid-template-columns:1fr}
+  .flow-viewport {height:clamp(350px,56dvh,640px)}
+  .flow-inspector {max-height:none}
+  .flow-tools {flex-wrap:wrap}
+  .flow-hint {display:none}
+}
+@media (forced-colors:active) {
+  .flow-canvas .react-flow__edge-path {stroke:CanvasText!important}
+  .flow-canvas .react-flow__arrowhead polyline {fill:CanvasText;stroke:CanvasText}
+  .flow-node.is-selected {outline-color:Highlight}
+}

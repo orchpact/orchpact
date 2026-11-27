@@ -3,13 +3,12 @@ from pathlib import Path
 import os
 import tomllib
 from urllib.parse import urlparse
-from dotenv import load_dotenv, dotenv_values
+from dotenv import dotenv_values
 from .credits import DEFAULT_POLICY, validate_policy
 
 @dataclass(frozen=True)
 class Settings:
     root: Path
-    token: str
     profiles: dict
     data: Path
     host: str = "127.0.0.1"
@@ -26,6 +25,7 @@ class Settings:
     products: dict = field(default_factory=dict)
     credits: dict = field(default_factory=lambda: dict(DEFAULT_POLICY))
     allow_experimental_planning: bool = False
+    _configuration: object = field(default=None,repr=False,compare=False)
 
     def __post_init__(self):
         object.__setattr__(self,'credits',validate_policy(self.credits))
@@ -58,47 +58,10 @@ class Settings:
     @classmethod
     def load(cls, root, host="127.0.0.1", port=8780):
         root = Path(root).resolve()
-        private=dotenv_values(root/".env")
-        # Keep database credentials local to this Settings object, not global dotenv state.
-        for key,value in private.items():
-            if key not in ("ORCHPACT_DATABASE_URL","ORCHPACT_API_TOKEN") and value is not None:os.environ.setdefault(key,value)
+        private=dotenv_values(root/".env",interpolate=False)
         database_url=os.environ.get("ORCHPACT_DATABASE_URL") or private.get("ORCHPACT_DATABASE_URL","")
-        token = os.environ.get("ORCHPACT_API_TOKEN") or private.get("ORCHPACT_API_TOKEN", "")
-        if len(token) < 32 or token.startswith("replace-"):
-            raise ValueError("请配置至少32字符的随机ORCHPACT_API_TOKEN")
         from .provider_config import persisted
         managed=persisted(database_url)
-        profiles = {} if managed else tomllib.loads((root / "config/models.toml").read_text())["models"]
-        search_file = root / 'config/search.toml'
-        from .search import configuration
-        search_config = configuration(tomllib.loads(search_file.read_text())) if search_file.exists() else None
-        enabled = {}
-        for ident, original in ({} if managed else profiles).items():
-            mode=original.get('enabled',True)
-            if not isinstance(mode,bool) and mode!='auto':raise ValueError(f'模型 {ident} 的enabled须为true/false或auto')
-            if mode is False or (mode=='auto' and not os.environ.get(original.get('key_env',''))):continue
-            p = dict(original, id=ident)
-            if p.get("kind") not in ("text", "image"):
-                raise ValueError(f"模型 {ident} 使用了尚未接入的执行能力")
-            url = urlparse(p["base_url"])
-            if url.scheme not in ("http", "https") or not url.hostname or url.username or url.password or url.query:
-                raise ValueError(f"模型 {ident} 的base_url不合法")
-            if not os.environ.get(p["key_env"]):
-                raise ValueError(f"模型 {ident} 缺少环境变量 {p['key_env']}")
-            if p["kind"] == "text" and not p.get("json_mode"):
-                raise ValueError(f"模型 {ident} 必须支持json_object输出")
-            caps = ["text", "json"] if p["kind"] == "text" else ["image"]
-            if p['kind']=='image':
-                from .image_providers import image_options
-                provider,_=image_options(p);p['provider']=provider
-                if provider!='openai_compatible':caps.append('image_reference')
-            if p.get("search"):
-                if p["kind"] != "text" or (not search_config['providers'] if search_config is not None else not os.environ.get(p.get("search_key_env", ""))):
-                    raise ValueError(f"搜索模型 {ident} 缺少搜索凭据或类型不正确")
-                if search_config is not None:p['search_config'] = search_config
-                caps.append("search")
-            p["capabilities"] = caps
-            enabled[ident] = p
         # An empty catalog is valid for configuration; execution rejects missing capabilities.
         frontend_file=root/'config/frontends.toml'
         frontends=tomllib.loads(frontend_file.read_text()).get('frontends',{}) if frontend_file.exists() else {}
@@ -114,7 +77,7 @@ class Settings:
         if set(credit_config)-{'credits'}:raise ValueError('积分配置只允许[credits]配置段')
         credits=credit_config.get('credits',{})
         if managed:execution={**execution, **managed['execution']}
-        settings=cls(root, token, enabled, root / "var", host, port, host in ("127.0.0.1", "localhost", "::1"),frontends,**execution,**security,credits=credits,database_url=database_url)
+        settings=cls(root, {}, root / "var", host, port, host in ("127.0.0.1", "localhost", "::1"),frontends,**execution,**security,credits=credits,database_url=database_url)
         if managed:
             from .provider_config import ProviderConfiguration
             from .db import Database
@@ -138,14 +101,14 @@ class Settings:
 
     def active_profiles(self):
         manager=getattr(self,'_configuration',None)
-        return manager.profiles() if manager else self.profiles
+        return manager.profiles() if manager else {}
 
     def image_catalog(self):
         manager=getattr(self,'_configuration',None)
-        if manager and manager.read()[0]:
-            return [dict(id=p['id'],label=p['label'],model=p['model'],provider=p['adapter'],priority=p['priority'],status='enabled' if p['available'] else 'disabled' if not p['enabled'] else 'missing_credentials',key_env=p['key_env']) for p in manager.public()['value']['providers'] if p['category']=='image']
+        if manager:
+            return [dict(id=p['id'],label=p['label'],model=p['model'],provider=p['adapter'],priority=p['priority'],status='enabled' if p['available'] else 'disabled' if not p['enabled'] else 'missing_credentials') for p in manager.public()['value']['providers'] if p['category']=='image']
         path=self.root/'config/models.toml'
         profiles=tomllib.loads(path.read_text()).get('models',{}) if path.exists() else self.profiles
         return [dict(id=key,label=p.get('label',key),model=p.get('model',''),provider=p.get('provider','openai_compatible'),priority=p.get('priority',100),
-            status='enabled' if key in self.profiles else 'disabled' if p.get('enabled',True) is False else 'missing_credentials',key_env=p.get('key_env',''))
+            status='disabled' if p.get('enabled',True) is False else 'missing_credentials')
             for key,p in profiles.items() if p.get('kind')=='image']

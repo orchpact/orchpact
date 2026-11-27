@@ -29,8 +29,12 @@ class DeliveryContracts:
         node=self.node(c,task)
         binding = c.execute('SELECT binding,root_task_id FROM invocations WHERE id=%s', (task['project_id'],)).fetchone()
         if binding:
-            operation = loads(binding['binding'])
-            self.s.result(operation, files, required=binding['root_task_id'] == task['id'] and task['status'] != 'partial')
+            root = binding['root_task_id'] == task['id']
+            # A fixed-plan node owns its declared files. Independent branches can use
+            # the same filename with different contracts; the root checks its chosen result.
+            if root or not loads(task['definition']).get('key'):
+                operation = loads(binding['binding'])
+                self.s.result(operation, files, required=root and task['status'] != 'partial')
         if not node:
             for file in files:
                 if file['path'].endswith('.json'):

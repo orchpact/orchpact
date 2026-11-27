@@ -1,4 +1,4 @@
-from orchpact.testing import database_url_for
+from orchpact.testing import database_url_for, fixture_provider_credentials
 """Isolated runtime fixtures. No credential files, real providers, or runtime directories."""
 import copy
 from pathlib import Path
@@ -11,7 +11,7 @@ from orchpact.interfaces.context import from_actor
 from orchpact.adapters.identity import Principal
 from orchpact.adapters.database import dumps
 
-TOKEN = 'runtime-fixture-administrator-' * 3
+from account_fixtures import ADMIN_USERNAME, ADMIN_PASSWORD
 SCHEMA = {'type':'object','additionalProperties':False,'required':['value'],'properties':{'value':{'type':'integer'}}}
 
 
@@ -31,11 +31,13 @@ class KernelFixture(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         text = dict(id='text',label='Fixture',kind='text',model='fixture',base_url='https://example.invalid/v1',key_env='RUNTIME_FIXTURE_KEY',capabilities=['text','json'],priority=1,json_mode=True)
-        self.settings = Settings(self.root,TOKEN,{'text':text},self.root/'var',workers=2,database_url=database_url_for(self.root/'var'))
+        self.settings = Settings(self.root,{'text':text},self.root/'var',workers=2,database_url=database_url_for(self.root/'var'))
         self.app = create_app(self.settings,run_worker=False)
         self.client = TestClient(self.app).__enter__()
-        self.client.headers['Authorization'] = 'Bearer '+TOKEN
         self.s = self.app.state.service
+        fixture_provider_credentials(self.s,default_model='fixture-provider-key',search={'search:tavily':'fixture-search-key'})
+        actor = self.s.access.setup_admin(ADMIN_USERNAME,ADMIN_PASSWORD,offline=True)
+        self.client.headers['Authorization'] = 'Bearer '+self.s.access.session(actor.user_id)
         me = self.client.get('/api/v1/auth/me').json()
         self.user,self.workspace = me['user_id'],me['workspace_id']
         self.ctx = from_actor(Principal(self.user,True,self.workspace))

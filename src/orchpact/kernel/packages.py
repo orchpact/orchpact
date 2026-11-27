@@ -66,15 +66,16 @@ def validate_package(value):
         filename = operation.setdefault('output_file', 'result.json')
         output_kind=operation.get('output_kind','json')
         if output_kind not in ('json','artifact'):raise ValueError('操作 output_kind 无效')
+        from .files import encode_files
+        if not isinstance(filename,str):raise ValueError('操作输出文件路径无效')
+        encode_files([dict(path=filename,data=b'')])
         if output_kind=='artifact':
             if 'output_schema' in operation or 'artifact_output' not in operation:raise ValueError('Artifact 根输出必须声明独立媒体契约')
             operation['artifact_output']=ArtifactOutput.model_validate(operation['artifact_output']).model_dump()
-            from .files import encode_files
-            encode_files([dict(path=filename,data=b'x')])
         else:
             if 'artifact_output' in operation:raise ValueError('JSON 根输出不能声明 Artifact 媒体契约')
             check_schema(operation['output_schema'])
-            if not re.fullmatch(r'[a-zA-Z0-9_-]+\.json', filename):raise ValueError('操作输出必须是命名 JSON 文件')
+            if not filename.endswith('.json'):raise ValueError('操作输出必须是命名 JSON 文件')
         if 'verification' in operation:
             if not operation.get('execution_plan'):raise ValueError('根验证策略要求固定执行计划')
             operation['verification']=verification_policy(operation['verification'])

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Orchpact · 品牌色与界面样张</title>
+  <link rel="icon" href="brand/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="preview.css">
+  <script src="preview.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳至正文</a>
+  <header class="page-head">
+    <div class="wrapper head-row">
+      <a class="signature" href="#main" aria-label="Orchpact 品牌样张首页">
+        <img class="logo-light" src="brand/logo-light.svg" alt="" width="145" height="36">
+        <img class="logo-dark" src="brand/logo-dark.svg" alt="" width="145" height="36">
+      </a>
+      <nav aria-label="样张目录"><a href="#colors">品牌色</a><a href="#website">官网</a><a href="#console">后台</a><a href="#docs">文档</a></nav>
+      <label class="theme-control" hidden>外观
+        <select id="theme"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select>
+      </label>
+    </div>
+  </header>
+
+  <main class="wrapper" id="main" tabindex="-1">
+    <section id="colors" aria-labelledby="page-title">
+      <div class="intro">
+        <h1 id="page-title">品牌色与界面样张</h1>
+        <p>靛蓝用于主要操作和品牌底色。荧光黄落在验收勾和交付节点上，让流程的终点一眼可见。</p>
+      </div>
+      <ul class="swatches" aria-label="品牌标准色">
+        <li class="indigo"><span>靛蓝</span><code>#262896</code></li>
+        <li class="lime"><span>荧光黄</span><code>#EAFF58</code></li>
+        <li class="paper"><span>纸白</span><code>#F7F4EB</code></li>
+        <li class="ink"><span>墨色</span><code>#181922</code></li>
+      </ul>
+    </section>
+
+    <section class="use-case" id="website" aria-labelledby="website-title">
+      <div class="caption"><h2 id="website-title">官网</h2><p>品牌主画面用靛蓝承载流程，只让验收结果发亮。</p></div>
+      <div class="web-sample">
+        <div class="web-copy"><h3>把团队协作做成<br>可验收的工作流</h3>
+          <p>定义每一步由谁负责、依赖什么，以及怎样才算通过。</p>
+          <a href="#console">查看履约示例 <span aria-hidden="true">↓</span></a>
+        </div>
+        <figure class="process" aria-labelledby="diagram-title">
+          <svg viewBox="0 0 410 164" role="img" aria-labelledby="diagram-title diagram-desc">
+            <title id="diagram-title">多仓订单履约示意</title>
+            <desc id="diagram-desc">需求核对和库存核对汇入分配方案，方案经独立验收后交付。</desc>
+            <g fill="none" class="process-wire" stroke-width="1.6">
+              <path d="M96 48h24c20 0 12 32 36 32h10M96 111h24c20 0 12-31 36-31"/>
+              <path d="M243 80h27m60 0h28"/>
+            </g>
+            <g class="process-node">
+              <rect x="7" y="29" width="90" height="37" rx="7"/>
+              <rect x="7" y="93" width="90" height="37" rx="7"/>
+              <rect x="166" y="61" width="79" height="37" rx="7"/>
+              <path d="m297 51 29 29-29 29-29-29z"/>
+            </g>
+            <g class="diagram-text" text-anchor="middle">
+              <text x="52" y="53">需求核对</text><text x="52" y="117">库存核对</text>
+              <text x="205" y="85">分配方案</text><text x="297" y="135">独立验收</text>
+              <text x="375" y="135">交付</text>
+            </g>
+            <path d="m285 80 8 8 17-18" class="process-check" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="374" cy="80" r="15" class="process-end"/>
+            <path d="m367 80 4.7 5 8-10" fill="none" class="process-end-check" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </figure>
+      </div>
+    </section>
+
+    <section class="use-case" id="console" aria-labelledby="console-title">
+      <div class="caption"><h2 id="console-title">管理后台</h2><p>主要操作使用交互色。运行、返工和验收都有独立的状态色与文字说明。</p></div>
+      <div class="console-sample surface">
+        <div class="pane-title"><div><h3>运行工作台</h3><span>示例记录</span></div><a class="action" href="#doc-accept">查看验收规则</a></div>
+        <div class="table-scroll" tabindex="0" aria-label="示例运行记录表，可横向滚动">
+          <table>
+            <thead><tr><th scope="col">工作流</th><th scope="col">节点</th><th scope="col">状态</th><th scope="col">记录</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">多仓订单履约</th><td>库存分配</td><td><span class="status info"><span aria-hidden="true">›</span> 运行中</span></td><td>正在生成候选方案</td></tr>
+              <tr><th scope="row">多仓订单履约</th><td>成本复算</td><td><span class="status danger"><span aria-hidden="true">×</span> 校验失败</span></td><td>首次方案超出预算</td></tr>
+              <tr><th scope="row">多仓订单履约</th><td>运价核查</td><td><span class="status warning"><span aria-hidden="true">?</span> 证据不足</span></td><td>运价尚未确认</td></tr>
+              <tr><th scope="row">多仓订单履约</th><td>成本复算</td><td><span class="status success"><span aria-hidden="true">✓</span> 检查通过</span></td><td>修订方案符合预算</td></tr>
+              <tr><th scope="row">多仓订单履约</th><td>最终交付</td><td><span class="status delivery"><span aria-hidden="true">✓</span> 交付已验收</span></td><td>正式交付物已获验收</td></tr>
+              <tr><th scope="row">互动悬疑短篇</th><td>文稿生成</td><td><span class="status neutral"><span aria-hidden="true">□</span> 运行完成</span></td><td>候选文稿已就绪</td></tr>
+              <tr><th scope="row">互动悬疑短篇</th><td>发布候选</td><td><span class="status warning"><span aria-hidden="true">◷</span> 待人工验收</span></td><td>等待负责人审阅文稿</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="use-case" id="docs" aria-labelledby="docs-title">
+      <div class="caption"><h2 id="docs-title">文档网站</h2><p>用中性底色承载长文，让目录、正文链接、代码与提示各有清晰的层级。</p></div>
+      <div class="docs-sample surface">
+        <nav class="doc-nav" aria-label="文档样张章节">
+          <span>本页内容</span><a href="#doc-start">发起运行</a><a href="#doc-accept">交付验收</a>
+        </nav>
+        <article class="doc-article">
+          <h3 id="doc-start">发起运行</h3>
+          <p>调用工作流时，保留本次请求的幂等键。随后可在<a href="#console">运行工作台</a>查看每个节点的验收结果。</p>
+          <pre tabindex="0" aria-label="发起运行的 HTTP 请求片段"><code>POST /api/v1/workflows/{id}/runs
+Idempotency-Key: order-intake-001</code></pre>
+          <h4 id="doc-accept">交付验收</h4>
+          <aside class="note"><strong>人工验收</strong><p>工作流要求人工验收时，负责人需要审阅本次候选产物并确认交付。</p></aside>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

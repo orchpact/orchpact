@@ -15,7 +15,7 @@ class OrganizationTemplateTests(unittest.TestCase):
         value=json.loads((ROOT/'examples/workflows/evidence-review.json').read_text());value['id']='app/../../admin/users'
         with tempfile.TemporaryDirectory() as folder:
             file=Path(folder)/'untrusted.json';file.write_text(json.dumps(value))
-            with patch.dict('os.environ',ORCHPACT_API_TOKEN='fixture-only'),patch('orchpact.interfaces.client.Client.call') as call,patch('sys.stderr',new_callable=io.StringIO):
+            with patch('orchpact.interfaces.client.getpass',return_value='fixture-only'),patch.dict('os.environ',ORCHPACT_USERNAME='fixture-owner'),patch('orchpact.interfaces.client.Client.call') as call,patch('sys.stderr',new_callable=io.StringIO):
                 with self.assertRaises(SystemExit):configure(file,[])
                 call.assert_not_called()
     def test_direct_workflow_installation_keeps_bindings_out_of_published_definition(self):
@@ -27,7 +27,7 @@ class OrganizationTemplateTests(unittest.TestCase):
             return dict(installed_revision=0,revision=1)
         with tempfile.TemporaryDirectory() as folder:
             binding=Path(folder)/'bindings.json';binding.write_text(json.dumps({'models':{'reasoning':'text'}}))
-            with patch.dict('os.environ',ORCHPACT_API_TOKEN='fixture-only'),patch('orchpact.interfaces.client.Client.call',call):
+            with patch('orchpact.interfaces.client.getpass',return_value='fixture-only'),patch.dict('os.environ',ORCHPACT_USERNAME='fixture-owner'),patch('orchpact.interfaces.client.Client.call',call):
                 configure(ROOT/'examples/workflows/evidence-review.json',['--install','--bindings',str(binding)])
         self.assertNotIn('bindings',calls[1][2])
         self.assertEqual(calls[-1][1],'workflows/evidence-review/install')
@@ -41,6 +41,6 @@ class OrganizationTemplateTests(unittest.TestCase):
         self.assertNotEqual(nodes[0]['unit'],nodes[1]['unit']);self.assertTrue(nodes[1]['gate'])
     def test_publish_does_not_upgrade_or_execute_without_explicit_flags(self):
         calls=[]
-        with patch.dict('os.environ',ORCHPACT_API_TOKEN='fixture-only'),patch('orchpact.interfaces.client.Client.call',side_effect=lambda method,path,value=None:calls.append((method,path)) or dict(revision=1)):
+        with patch('orchpact.interfaces.client.getpass',return_value='fixture-only'),patch.dict('os.environ',ORCHPACT_USERNAME='fixture-owner'),patch('orchpact.interfaces.client.Client.call',side_effect=lambda method,path,value=None:calls.append((method,path)) or dict(revision=1)):
             configure(ROOT/'examples/workflows/evidence-review.json',[])
         self.assertEqual(calls,[('GET','workflows/evidence-review')])

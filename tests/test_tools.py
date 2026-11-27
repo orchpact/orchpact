@@ -70,7 +70,7 @@ class ToolWorkflowTests(KernelFixture):
         if self.config()['revision'] == 0:text['secret'] = 'text-fixture-secret'
         provider = deepcopy(text)
         provider.update(id='tool:renderer', category='tool', label='Renderer', adapter='http',
-            base_url='https://tools.example.invalid/render', model='', key_env='', secondary_key_env='',
+            base_url='https://tools.example.invalid/render', model='',
             search=False, thinking_disabled=False, image_options={},
             pricing={'unit': 'request', 'points': 2, 'unit_size': 1},
             tool_interface='document.render', tool_interface_version='1', implementation_version='1.0.0',

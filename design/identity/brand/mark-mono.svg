@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Orchpact · 序契</title>
+  <desc id="desc">Single-ink workflow mark with two input nodes, one check and a delivery point.</desc>
+  <g fill="none" stroke="currentColor" stroke-width="3.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21.6 68 H56 M26.5552 36.6403 C37.8317 41.1537 32.429 68 48 68"/>
+    <g fill="none"><circle cx="17" cy="68" r="4.6"/><circle cx="22" cy="36" r="4.6"/></g>
+    <path transform="translate(0 4)" d="M94 47 L85.5 38.5 Q83 36 80.5 38.5 L57.5 61.5 Q55 64 57.5 66.5 L80.5 89.5 Q83 92 85.5 89.5 L108.5 66.5 Q111 64 108.5 61.5 L105 58"/>
+  </g>
+  <g transform="translate(0 4)">
+    <path d="M72.5 63 L81.3 71.8 L109.7 43.4" fill="none" stroke="currentColor" stroke-width="4.45" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="110" cy="43" r="4.45" fill="currentColor"/>
+  </g>
+</svg>

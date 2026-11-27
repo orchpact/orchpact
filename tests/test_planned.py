@@ -40,3 +40,56 @@ class PlannedTests(KernelFixture):
     def test_rule_validation_precedes_installation(self):
         value=package();value['operations']['generate']['execution_plan']['nodes'][0]['rules']=[dict(kind='unknown',file='result.json')]
         self.assertEqual(self.client.post('/api/v1/organization-packages',json=value).status_code,409)
+
+    def apply_branch(self, run, target, source, revision=1, *, link='branch'):
+        node=dict(key='branch',kind='agent',description='Inspect a branch',expected='branch.json',
+                  staff=dict(name='Branch',role='Inspect',reason='Inspect the branch',model_id='text',
+                             capabilities=['text','json']),
+                  outputs={'branch.json':{'type':'object'}},depends_on=[source])
+        return self.client.post('/api/v1/runs/'+run['id']+'/commands',json=dict(
+            key='canvas-adjustment',action='amend',revision=revision,
+            payload=dict(reason='Check an alternative',add_nodes=[node],
+                         changes=[dict(task_id=target,add_dependencies=[link])])))
+
+    def test_add_from_completed_source_and_connect_to_pending_destination(self):
+        run=self.invoke(self.complex())
+        source=self.s.claim()
+        self.s.complete_work(source['execution_context'],source['task']['id'],source['task']['attempt_id'],
+                             'source',[dict(path='source.json',content='{"value":3}')])
+        before=self.view(run)
+        writer=next(task for task in before['tasks'] if task['node_key']=='writer')
+        revision=self.apply_branch(run,writer['id'],'source')
+        revision.raise_for_status()
+        self.assertEqual(revision.json()['revision'],2)
+        self.assertEqual(self.apply_branch(run,writer['id'],'source').json(),revision.json())
+        graph=self.client.get('/api/v1/workbench/runs/'+run['id']).json()
+        branch=next(task for task in graph['tasks'] if task['node_key']=='branch')
+        self.assertIn(branch['id'],graph['dependencies'][writer['id']])
+        self.assertEqual(graph['dependencies'][branch['id']],[source['task']['id']])
+        self.assertEqual(graph['payer_user_id'],before['payer_user_id'])
+        claimed=self.s.claim()
+        self.assertEqual(claimed['task']['id'],branch['id'])
+        self.s.complete_work(claimed['execution_context'],claimed['task']['id'],claimed['task']['attempt_id'],
+                             'branch',[dict(path='branch.json',content='{}')])
+        self.finish(value=7)
+        self.assertEqual(self.view(run)['result'],{'value':7})
+
+    def test_failed_link_rolls_back_created_node(self):
+        run=self.invoke(self.complex())
+        writer=next(task for task in run['tasks'] if task['node_key']=='writer')
+        before=self.view(run)
+        rejected=self.apply_branch(run,writer['id'],'source',link='not-added')
+        self.assertEqual(rejected.status_code,409,rejected.text)
+        after=self.view(run)
+        self.assertEqual(after['revision'],before['revision'])
+        self.assertEqual([task['id'] for task in after['tasks']],[task['id'] for task in before['tasks']])
+
+    def test_cycle_and_started_target_are_rejected(self):
+        run=self.invoke(self.complex())
+        source=next(task for task in run['tasks'] if task['node_key']=='source')
+        writer=next(task for task in run['tasks'] if task['node_key']=='writer')
+        cycle=self.apply_branch(run,writer['id'],'writer')
+        self.assertEqual(cycle.status_code,409,cycle.text)
+        self.assertEqual(self.s.claim()['task']['id'],source['id'])
+        started=self.apply_branch(run,source['id'],'writer')
+        self.assertEqual(started.json()['code'],'amendment_conflict')

@@ -7,7 +7,6 @@ import argparse
 from contextlib import ExitStack
 from copy import deepcopy
 import json
-import os
 from pathlib import Path
 import secrets
 import sys
@@ -65,15 +64,16 @@ def workflow():
 def scenario(name):
     with tempfile.TemporaryDirectory(prefix='orchpact-delivery-demo-') as directory:
         root=Path(directory)
-        profile=dict(id='demo',label='Synthetic demo',kind='text',model='synthetic',base_url='https://example.invalid/v1',key_env='ORCHPACT_DEMO_KEY',capabilities=['text','json'],priority=1,json_mode=True)
-        settings=Settings(root,secrets.token_urlsafe(48),{'demo':profile},root/'var',database_url=database_url_for(root/'var'))
+        profile=dict(id='demo',label='Synthetic demo',kind='text',model='synthetic',base_url='https://example.invalid/v1',capabilities=['text','json'],priority=1,json_mode=True)
+        settings=Settings(root,{'demo':profile},root/'var',database_url=database_url_for(root/'var'))
         instance=Instance(settings).open()
         try:
             service=instance.service
-            ctx=ExecutionContext('user:'+instance.admin_user,instance.admin_workspace,user_id=instance.admin_user,admin=True)
+            actor=instance.service.access.setup_admin('scenario-owner',secrets.token_urlsafe(48),offline=True)
+            ctx=ExecutionContext('user:'+actor.user_id,actor.workspace_id,user_id=actor.user_id,admin=True)
             service.access.wallets.adjust(ctx.user_id,1000,'Synthetic isolated demo','demo-budget',ctx.user_id)
             config=service.configuration.public();provider=deepcopy(config['value']['providers'][0])
-            provider.update(id='tool:demo-verifier',category='tool',label='Demo deterministic verifier',adapter='builtin',base_url='',model='',key_env='',secondary_key_env='',search=False,thinking_disabled=False,image_options={},
+            provider.update(id='tool:demo-verifier',category='tool',label='Demo deterministic verifier',adapter='builtin',base_url='',model='',search=False,thinking_disabled=False,image_options={},
                 pricing=dict(unit='request',points=0,unit_size=1),tool_interface='demo.verify-total',tool_interface_version='1',implementation_version='1.0.0',
                 tool_policy=dict(workspace_ids=[ctx.workspace_id],max_concurrency=1),
                 tool_verifier=dict(checks=['total'],media_types=['application/json'],trust_level='trusted',environment='isolated-demo-python'))
@@ -93,7 +93,6 @@ def scenario(name):
                 return httpx.Response(200,json=dict(id='synthetic-only',choices=[dict(finish_reason='stop',message=dict(content=json.dumps({'files':{'result.json':{'total':total}}})))],usage={'total_tokens':10}))
             run=service.delivery.invoke(ctx,asset['id'],dict(operation='calculate',input={'records':[{'amount':3},{'amount':5}]},context={}), 'demo-run')
             with ExitStack() as stack:
-                stack.enter_context(patch.dict(os.environ,ORCHPACT_DEMO_KEY='synthetic-only'))
                 stack.enter_context(patch('orchpact.adapters.providers.httpx.Client',side_effect=lambda **kw:HttpClient(transport=httpx.MockTransport(send),**kw)))
                 for _ in range(8):
                     if not instance.runner.step():break

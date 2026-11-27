@@ -1,6 +1,5 @@
 """Search wire protocols and evidence normalization; credentials stay server-side."""
 import ipaddress
-import os
 import re
 from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 from .provider_http import bounded_json
@@ -10,7 +9,6 @@ ENDPOINTS = {
     'you': 'https://ydc-index.io/v1/search',
     'tavily': 'https://api.tavily.com/search',
 }
-KEYS = {'deepseek': 'DEEPSEEK_API_KEY', 'you': 'YDC_API_KEY', 'tavily': 'TAVILY_API_KEY'}
 
 
 class SearchQuotaExceeded(ValueError):
@@ -58,20 +56,13 @@ def configuration(value):
         p = providers.get(name, {})
         if set(p) - {'enabled', 'key_env'}:raise ValueError('未知搜索供应商配置：'+name)
         enabled = p.get('enabled', 'auto')
-        key = p.get('key_env', KEYS[name])
-        if not isinstance(key, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', key):raise ValueError('搜索key_env须为环境变量名')
         if type(enabled) is not bool and enabled != 'auto':raise ValueError('搜索enabled须为true/false或auto')
-        if enabled is False:continue
-        if not os.environ.get(key):
-            if enabled is True:raise ValueError('搜索供应商 '+name+' 缺少环境变量 '+key)
-            continue
-        active.append(dict(id=name, key_env=key))
+        if enabled is not False:active.append(dict(id=name))
     return dict(mode=mode, providers=active, max_results=count, fetch_top=fetch)
 
 
 def profile_config(profile):
-    # A text profile may use Tavily directly or an explicit multi-source configuration.
-    return profile.get('search_config') or dict(mode='aggregate', providers=[dict(id='tavily', key_env=profile.get('search_key_env', 'TAVILY_API_KEY'))], max_results=5, fetch_top=0)
+    return profile.get('search_config') or dict(mode='aggregate', providers=[], max_results=5, fetch_top=0)
 
 
 def public_url(value):

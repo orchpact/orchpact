@@ -8,10 +8,10 @@ Orchpact 的公开契约覆盖工作流声明、目录发布、Workspace 安装�
 
 | 契约 | 校验与说明 |
 | --- | --- |
-| 可移植定义 | `orchpact workflow-check` 离线校验；完整行为见 [工作流协议](../docs/WORKFLOWS.md) |
-| 团队与岗位 | `units[].crew`、节点 `participants`；声明到运行对象的映射见 [团队设计](../docs/TEAM_EXECUTION.md) |
+| 可移植定义 | `orchpact workflow-check` 离线校验；完整行为见 [工作流协议](https://orchpact.github.io/docs/workflows/) |
+| 团队与岗位 | `units[].crew`、节点 `participants`；声明到运行对象的映射见 [团队设计](https://orchpact.github.io/docs/teams/) |
 | 资源安装 | 模型绑定选择本地 profile；工具绑定使用 `endpoint_ref + implementation_version` 选择可信 provider。槽位必须恰好覆盖，物理配置不能混入定义 |
-| 运行与交付 | [应用 API](../docs/APPLICATIONS.md)，包含权限、幂等、状态、文件与执行步骤元数据 |
+| 运行与交付 | [应用 API](https://orchpact.github.io/docs/applications/)，包含权限、幂等、状态、文件与执行步骤元数据 |
 
 工作流作者 `version`、目录修订和 Workspace 安装修订分别管理。直接运行使用当前 Workspace 已安装的固定修订。新的发布与显式安装升级各自生效，历史执行保留原快照。
 
@@ -23,7 +23,7 @@ Orchpact 的公开契约覆盖工作流声明、目录发布、Workspace 安装�
 
 Runtime 使用独立 tool_call_id 和 project + logical tool + idempotency_key 幂等边界，run 的 `tool_invocations` 仅暴露状态、引用与摘要。UNKNOWN 不自动重试；显式对账只调用只读 lookup，HTTP 通用 adapter 不支持时需人工核对。只有声明 `retry_policy=safe_only` 的只读节点可在明确失败后由人工显式重试。
 
-确定性 `external_write` 工具可声明 `requires_approval: true`。审批绑定实际参数、工具目标、工作项及当前代次，在发送前随调用登记原子关联一个 tool_call_id。执行视图返回审批摘要，获授权审批人通过独立接口查看参数并提交决定。接口见 [直接运行工作流](../docs/APPLICATIONS.md)。
+确定性 `external_write` 工具可声明 `requires_approval: true`。审批绑定实际参数、工具目标、工作项及当前代次，在发送前随调用登记原子关联一个 tool_call_id。执行视图返回审批摘要，获授权审批人通过独立接口查看参数并提交决定。接口见 [直接运行工作流](https://orchpact.github.io/docs/applications/)。
 
 `verification` 声明只读 Verifier 和全部阻断性 required_checks。管理员 `tool_verifier` 元数据决定可信身份、检查集合、媒体范围与环境，作者不能自证可信。候选 Artifact 的 PASS 证据绑定 ID/SHA-256/generation/contract_digest 和 Verifier 版本后才允许现有 `review()` 接受；FAIL/INCONCLUSIVE、缺失或过期证据均阻断。run 的 `verification_evidence` 与授权证据读取不包含其他 Workspace/应用数据，waive/partial 不表示完整接受。
 
@@ -45,10 +45,10 @@ uv run orchpact workflow-check examples/workflows/department-review.json
 
 计划修改中 `changes[].task_id` 是实际工作项 ID；新增 `add_nodes` 使用运行时 PlanNode（unit_id，可省略使用父组织），依赖和父节点为项目内 node key。组织包导入时的 `unit` 稳定别名在安装阶段解析，两种边界不可混用。
 
-执行状态、幂等范围、结果与文件见 [应用接入](../docs/APPLICATIONS.md)；权限和快照语义见 [架构](../docs/ARCHITECTURE.md)。
+执行状态、幂等范围、结果与文件见 [应用接入](https://orchpact.github.io/docs/applications/)；权限和快照语义见 [架构](https://orchpact.github.io/docs/architecture/)。
 
 ## 组织包与实现入口
 
 历史兼容入口的内联组织包由 `orchpact.kernel.packages.validate_package` 进行语义校验。包作者的 `version` 与服务端并发控制的 `revision` 分开处理。旧格式见 [evidence-team.json](../examples/evidence-team.json)。
 
-`orchpact.kernel.workflows` 实现纯定义校验、指纹、能力绑定与白名单导出。此处列出源码定位，不将内部模块承诺为稳定库接口。公开兼容边界见 [接口与版本策略](../docs/COMPATIBILITY.md)。
+`orchpact.kernel.workflows` 实现纯定义校验、指纹、能力绑定与白名单导出。此处列出源码定位，不将内部模块承诺为稳定库接口。公开兼容边界见 [接口与版本策略](https://orchpact.github.io/docs/compatibility/)。

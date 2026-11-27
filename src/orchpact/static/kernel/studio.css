@@ -1,0 +1,97 @@
+.studio-shell {--rail-width:166px;--bar-height:60px;}
+.console-bar {
+  position:sticky;z-index:5;top:0;display:grid;align-items:center;grid-template-columns:var(--rail-width) minmax(145px,280px) minmax(0,1fr);
+  height:var(--bar-height);border-bottom:1px solid var(--op-line);background:var(--op-surface);
+}
+.brand {display:inline-flex;width:fit-content;max-width:100%;align-items:center;padding-inline:17px;}
+.console-wordmark img {display:block;width:auto;height:32px;}
+.compact-mark {display:none;}
+.console-icon {display:block;width:18px;height:18px;flex:none;stroke-width:1.75;}
+.workspace-control {display:flex;align-items:center;gap:8px;margin-left:12px;color:var(--op-muted);font-size:.8rem;white-space:nowrap;}
+.workspace-control select {min-width:0;max-width:190px;min-height:34px;padding:4px 6px;border:1px solid var(--op-control);border-radius:6px;background:var(--op-surface);font-size:.875rem;text-overflow:ellipsis;}
+.toolbar {min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:4px;padding-inline:8px 16px;}
+.toolbar :is(a,button),.console-nav :is(a,button),.settings-destinations a {text-decoration:none;color:var(--op-muted);background:transparent;border:0;}
+.toolbar :is(a,button):hover,.console-nav :is(a,button):hover,.settings-destinations a:hover {color:var(--op-text);background:var(--op-subtle);}
+.toolbar :is(a,button) {display:inline-flex;align-items:center;justify-content:center;padding:.35rem;min-width:34px;height:34px;border-radius:6px;}
+.toolbar .account-button {display:inline-flex;align-items:center;gap:.5rem;padding:4px 8px;max-width:min(260px,55%);}
+#console-identity {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.875rem;}
+.role-label {white-space:nowrap;font-size:.7rem;line-height:1.4;padding:2px 5px;border:1px solid var(--op-line);border-radius:4px;color:var(--op-muted);background:var(--op-subtle);}
+.layout {display:grid;align-items:start;grid-template-columns:var(--rail-width) minmax(0,1fr);}
+.console-nav {
+  height:calc(100dvh - var(--bar-height));position:sticky;top:var(--bar-height);z-index:4;
+  display:flex;flex-direction:column;gap:4px;padding:15px 9px;background:var(--op-surface);border-right:1px solid var(--op-line);
+}
+.console-nav :is(a,button),.settings-destinations a {position:relative;display:flex;align-items:center;justify-content:flex-start;gap:10px;min-height:40px;width:100%;padding:9px 12px;border-radius:7px;font-weight:560;line-height:1.4;font-size:.91rem;}
+.console-nav [aria-current=page],.toolbar [aria-current=page],.console-nav .settings-trigger[data-current],.settings-destinations [aria-current=page] {background:var(--op-selected-bg);color:var(--op-link);font-weight:680;}
+.console-nav [aria-current=page]::before,.console-nav .settings-trigger[data-current]::before {content:"";position:absolute;inset-block:10px;left:0;border-left:3px solid var(--op-link);border-radius:2px;}
+.platform-entry {margin-top:auto;}
+.platform-entry [data-slot=separator] {background:var(--op-line);height:1px;margin:8px 0;}
+.console-settings-sheet {box-sizing:border-box;width:min(350px,90vw);padding:28px 20px;background:var(--op-surface);border:1px solid var(--op-line);color:var(--op-text);}
+.console-settings-sheet [data-slot=sheet-title] {margin:0;padding-right:38px;font-size:1.35rem;}
+.console-settings-sheet [data-slot=sheet-description] {color:var(--op-muted);margin:0;}
+.console-settings-sheet > button {top:14px;right:14px;min-height:36px;min-width:36px;border:1px solid var(--op-line);display:grid;place-items:center;}
+.settings-destinations {display:grid;gap:3px;overflow:auto;}
+.appearance-setting {display:flex;align-items:center;justify-content:space-between;gap:1rem;font-size:.9rem;}
+.appearance-setting select {min-height:36px;color:var(--op-text);background:var(--op-surface);border:1px solid var(--op-control);}
+.studio-shell #console-main {padding:clamp(16px,2vw,32px);min-width:0;}
+.studio-shell.in-studio #console-main {padding:clamp(12px,1.5vw,24px);}
+.studio-shell :is(.heading h1,.flow-header h1) {font-size:clamp(1.5rem,2.1vw,2.15rem);letter-spacing:-.04em;}
+.studio-shell.in-studio .flow-header a {font-size:.85rem;}
+.studio-preview {border:1px solid var(--op-line);border-radius:10px;overflow:hidden;background:var(--op-surface);margin:.75rem 0;}
+.studio-preview > .flow-top {padding:.65rem 1rem 0;}
+.studio-shell .flow-viewport {height:clamp(410px,calc(100dvh - 267px),1300px);}
+.studio-shell .flow-inspector {max-height:calc(clamp(410px,100dvh - 267px,1300px) + 4.4rem);}
+#resource-drawer {
+  position:fixed;z-index:3;top:var(--bar-height);left:var(--rail-width);bottom:0;
+  width:min(480px,calc(100vw - var(--rail-width)));overflow:auto;overscroll-behavior:contain;
+  border-right:1px solid var(--op-line);background:var(--op-surface);box-shadow:var(--shadow);
+}
+.drawer-bar {display:flex;position:sticky;top:0;z-index:1;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--op-line);background:var(--op-surface);}
+.drawer-bar strong {font-size:1.1rem;}
+.drawer-bar button {width:34px;height:34px;min-height:34px;padding:0;text-align:center;font-size:21px;line-height:1;}
+#drawer-content {padding:16px;}
+#drawer-content .heading {flex-wrap:wrap;margin-bottom:10px;}
+#drawer-content .heading h1 {font-size:1.05rem;letter-spacing:0;}
+#drawer-content .heading p:empty {display:none;}
+#drawer-content .workflow-grid {grid-template-columns:1fr;}
+#drawer-content .panel {padding:.9rem;border-radius:9px;}
+#drawer-content .section-tabs {flex-wrap:wrap;}
+#drawer-content .inbox-row {grid-template-columns:minmax(0,1fr) auto;}
+#drawer-content .inbox-row strong {grid-row:2;grid-column:1 / -1;}
+.console-editor {width:min(700px,calc(100vw - 32px));max-width:700px;max-height:calc(100dvh - 48px);overflow:auto;overscroll-behavior:contain;box-shadow:var(--shadow);border:1px solid var(--op-line);background:var(--op-surface);color:var(--op-text);border-radius:12px;padding:clamp(16px,3vw,26px);}
+.console-editor .dialog-head {padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--op-line);}
+.console-editor .dialog-head h2 {font-size:1.25rem;}
+.console-editor .actions {padding-block:5px;}
+.local-drafts {margin:1rem 0;padding:.65rem .85rem;border-inline-start:2px solid var(--op-link);}
+.local-drafts h2 {font-size:.9rem;margin:0 0 .3rem;}
+.local-drafts a {display:block;padding:.2rem 0;overflow-wrap:anywhere;}
+@media(max-width:1000px) and (min-width:851px) {
+  .studio-shell {--rail-width:130px;}
+  .brand {padding-inline:10px;}
+  .console-wordmark img {height:26px;}
+}
+@media(max-width:850px) {
+  .studio-shell {--rail-width:0px;--bar-height:56px;}
+  .console-bar {grid-template-columns:auto minmax(0,1fr) auto;}
+  .brand {padding-inline:12px;}
+  .console-wordmark {display:none;}.compact-mark {display:block;width:33px;height:33px;}
+  .workspace-control {margin-left:0;}
+  .layout {display:block;}
+  .console-nav {position:fixed;inset:auto 0 0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;height:auto;padding:4px 4px max(4px,env(safe-area-inset-bottom));border:0;border-top:1px solid var(--op-line);}
+  .console-nav :is(a,button) {display:flex;justify-content:center;flex-direction:column;gap:2px;height:48px;padding:4px 0;font-size:.76rem;}
+  .console-nav [aria-current=page]::before,.console-nav .settings-trigger[data-current]::before {inset:0 25% auto;border:0;border-top:2px solid var(--op-link);}
+  .platform-entry {margin:0;}.platform-entry [data-slot=separator] {display:none;}
+  .studio-shell #console-main,.studio-shell.in-studio #console-main {padding:14px 12px calc(78px + env(safe-area-inset-bottom));}
+  #resource-drawer {left:0;width:min(480px,100%);bottom:calc(57px + env(safe-area-inset-bottom));}
+  .studio-shell .flow-viewport {height:clamp(355px,55dvh,720px);}
+  .studio-shell .flow-inspector {max-height:none;}
+}
+@media(max-width:600px) {
+  .workspace-control > span,.workspace-control .console-icon,.role-label,.toolbar .toolbar-api {display:none;}
+  .workspace-control select {width:100%;max-width:210px;min-height:38px;}
+  .toolbar {gap:0;padding-inline:3px 6px;}.toolbar :is(a,button) {height:40px;min-width:34px;}
+  .toolbar .account-button {max-width:100px;}.console-editor {max-height:85dvh;padding:16px;}
+}
+@media(max-width:395px){#console-identity{display:none;}}
+@media(prefers-reduced-motion:reduce){[data-slot=sheet-content],[data-slot=sheet-overlay],[data-slot=dialog-content],[data-slot=dialog-overlay]{animation:none!important;transition:none!important;}}
+@media(forced-colors:active){.console-nav [aria-current=page],.console-nav [data-current],.settings-destinations [aria-current=page]{outline:2px solid Highlight;}}

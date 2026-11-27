@@ -1,6 +1,6 @@
 'use strict';
 
-const OrchpactOrganizations = (() => {
+export const OrchpactOrganizations = (() => {
  const dialog = document.querySelector('#organization-editor');
  const form = dialog.querySelector('form');
  const fields = dialog.querySelector('[data-fields]');

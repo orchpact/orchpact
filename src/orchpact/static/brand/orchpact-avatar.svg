@@ -1,11 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
-<title id="title">Orchpact avatar</title>
-<desc id="description">Two interlocking workflow tracks form an O-shaped pact seal. Full square background and safe margins for circular cropping.</desc>
-<rect width="1024" height="1024" fill="#173D32"/>
-<g transform="scale(10.6666666667)">
-<g fill="none" stroke-width="12" stroke-linejoin="round">
-<path stroke="#F4F4EC" d="M57 21H36L21 36V60L36 75H48V54H39"/>
-<path stroke="#D4E7A3" d="M39 75H60L75 60V36L60 21H48V42H57"/>
-</g>
-</g>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Orchpact · 序契</title>
+  <desc id="desc">Square avatar with safe space for a circular crop.</desc>
+<rect width="1024" height="1024" fill="#262896"/>
+  <g transform="translate(64 64) scale(7)">
+<rect width="128" height="128" rx="25" fill="#262896"/>
+  <g fill="none" stroke="#F7F4EB" stroke-width="3.15" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17 68 H56 M23 36 C39 36 31 68 48 68"/>
+    <g fill="#262896"><circle cx="17" cy="68" r="4.6"/><circle cx="22" cy="36" r="4.6"/></g>
+    <path transform="translate(0 4)" d="M94 47 L85.5 38.5 Q83 36 80.5 38.5 L57.5 61.5 Q55 64 57.5 66.5 L80.5 89.5 Q83 92 85.5 89.5 L108.5 66.5 Q111 64 108.5 61.5 L105 58"/>
+  </g>
+  <g transform="translate(0 4)">
+    <path d="M72.5 63 L81.3 71.8 L109.7 43.4" fill="none" stroke="#EAFF58" stroke-width="4.45" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="110" cy="43" r="4.45" fill="#EAFF58"/>
+  </g>
+  </g>
 </svg>

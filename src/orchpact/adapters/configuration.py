@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from .database import dumps, loads, ident, now
 from ..credits import validate_policy, policy_snapshot
 from ..image_providers import image_options
-from ..search import ENDPOINTS, KEYS, profile_config
+from ..search import ENDPOINTS, configuration as search_configuration
 
 TOOL_FIELDS = {'tool_interface','tool_interface_version','implementation_version','tool_policy','tool_verifier'}
 
@@ -96,17 +96,19 @@ class ProviderConfiguration:
             p=deepcopy(original);kind=p.get('kind')
             if kind not in ('text','image'):continue
             rows.append(dict(id=key,category=kind,label=p.get('label',key),enabled=p.get('enabled',True) is not False,
-                adapter=p.get('provider','openai_compatible'),base_url=p.get('base_url',''),model=p.get('model',''),key_env=p.get('key_env',''),secondary_key_env='',
+                adapter=p.get('provider','openai_compatible'),base_url=p.get('base_url',''),model=p.get('model',''),
                 priority=p.get('priority',100),search=bool(p.get('search') or 'search' in p.get('capabilities',[])),thinking_disabled=p.get('thinking_disabled',False),
                 image_options=p.get('image_options',{}),pricing=dict(unit='request',unit_size=1,points=100) if kind=='image' else None))
-        search=next((profile_config(p) for p in self.settings.profiles.values() if 'search' in p.get('capabilities',[])),dict(mode='aggregate',providers=[],max_results=5,fetch_top=0))
         search_path=self.settings.root/'config/search.toml'
-        imported=tomllib.loads(search_path.read_text()) if search_path.exists() else {}
-        source_order=imported.get('search',{}).get('sources',list(ENDPOINTS))
+        if search_path.exists():
+            search=search_configuration(tomllib.loads(search_path.read_text()))
+        else:
+            search=next((p['search_config'] for p in raw.values() if 'search_config' in p),None) or search_configuration({})
+        source_order=[source['id'] for source in search['providers']]
         for name in ENDPOINTS:
-            active=next((p for p in search['providers'] if p['id']==name),{})
-            source=imported.get('providers',{}).get(name,{})
-            rows.append(dict(id='search:'+name,category='search',label={'you':'You.com','deepseek':'DeepSeek Search','tavily':'Tavily'}[name],enabled=name in source_order and source.get('enabled') is not False,adapter=name,base_url=ENDPOINTS[name],model='',key_env=source.get('key_env',active.get('key_env',KEYS[name])),secondary_key_env='',priority=source_order.index(name)*10 if name in source_order else 100,search=False,thinking_disabled=False,image_options={},pricing=None))
+            rows.append(dict(id='search:'+name,category='search',label={'you':'You.com','deepseek':'DeepSeek Search','tavily':'Tavily'}[name],
+                enabled=name in source_order,adapter=name,base_url=ENDPOINTS[name],model='',
+                priority=source_order.index(name)*10 if name in source_order else 100,search=False,thinking_disabled=False,image_options={},pricing=None))
         rows.append(dict(next(p for p in rows if p['id']=='search:deepseek'),id='search:deepseek:fetch',label='DeepSeek Fetch',adapter='deepseek_fetch',base_url='https://api.deepseek.com/v1/tools/fetch'))
         return dict(credits=dict(self.settings.credits),execution=dict(workers=self.settings.workers,max_tasks_per_project=self.settings.max_tasks_per_project),
             search={k:deepcopy(search[k]) for k in ('mode','max_results','fetch_top')},providers=rows)
@@ -117,6 +119,9 @@ class ProviderConfiguration:
         row=c.execute('SELECT * FROM provider_configuration WHERE id=1').fetchone()
         if not row:return 0,self.seed()
         value=loads(row['value'])
+        for provider in value['providers']:
+            provider.pop('key_env',None)
+            provider.pop('secondary_key_env',None)
         return row['revision'],value
 
     def secret(self,record,secondary=False):
@@ -126,7 +131,7 @@ class ProviderConfiguration:
             if not re.fullmatch(r'[a-f0-9-]{36}',ref):raise ValueError('凭据引用无效')
             path=self.directory/ref
             return path.read_text() if path.exists() else ''
-        return os.environ.get(record.get('secondary_key_env' if secondary else 'key_env',''),'')
+        return ''
 
     def ready(self,p):
         if p['category'] == 'tool':
@@ -191,8 +196,7 @@ class ProviderConfiguration:
         return policy
 
     def profiles(self):
-        revision,value=self.read()
-        if not revision:return self.settings.profiles
+        _,value=self.read()
         search=self.search_config(value)
         profiles={}
         for p in value['providers']:
@@ -200,7 +204,7 @@ class ProviderConfiguration:
             caps=['text','json'] if p['category']=='text' else ['image']
             if p['category']=='image' and p['adapter']!='openai_compatible':caps.append('image_reference')
             if p['search'] and search['providers']:caps.append('search')
-            item=dict(id=p['id'],label=p['label'],kind=p['category'],model=p['model'],base_url=p['base_url'],key_env=p['key_env'],provider=p['adapter'],priority=p['priority'],capabilities=caps,json_mode=True,
+            item=dict(id=p['id'],label=p['label'],kind=p['category'],model=p['model'],base_url=p['base_url'],provider=p['adapter'],priority=p['priority'],capabilities=caps,json_mode=True,
                       thinking_disabled=p['thinking_disabled'],image_options=p['image_options'],credential=p)
             if 'search' in caps:item['search_config']=search
             profiles[p['id']]=item
@@ -210,7 +214,7 @@ class ProviderConfiguration:
         value=value or self.read()[1];providers=[];fetch=None
         for p in sorted(value['providers'],key=lambda p:p['priority']):
             if p['category']!='search' or not self.ready(p):continue
-            item=dict(id=p['adapter'],key_env=p['key_env'],credential=deepcopy(p),base_url=p['base_url'])
+            item=dict(id=p['adapter'],credential=deepcopy(p),base_url=p['base_url'])
             if p['adapter']=='deepseek_fetch':fetch=item
             else:providers.append(item)
         return dict(value['search'],providers=providers,fetch_provider=fetch)
@@ -225,7 +229,7 @@ class ProviderConfiguration:
         rows=value['providers']
         if not isinstance(rows,list) or not 1<=len(rows)<=100:raise ValueError('提供者须为1到100项')
         old_by_id={p['id']:p for p in old['providers']};ids=set();secrets=[]
-        fields={'id','category','label','enabled','adapter','base_url','model','key_env','secondary_key_env','priority','search','thinking_disabled','image_options','pricing'}
+        fields={'id','category','label','enabled','adapter','base_url','model','priority','search','thinking_disabled','image_options','pricing'}
         allowed={'text':{'openai_compatible'},'image':{'openai_compatible','openai','seedream','gemini'},'search':set(ENDPOINTS)|{'deepseek_fetch'},'tool':{'http','mcp','builtin'}}
         for index,p in enumerate(rows):
             if not isinstance(p,dict) or set(p)-fields-TOOL_FIELDS-{'secret','secondary_secret','secret_configured','secondary_configured','available'}:raise ValueError('提供者包含未知字段')
@@ -244,8 +248,6 @@ class ProviderConfiguration:
             if type(p['priority']) is not int or not 0<=p['priority']<=10000:raise ValueError('优先级须为0到10000')
             if not isinstance(p['label'],str) or not p['label'].strip() or len(p['label'])>120:raise ValueError('名称须为1到120字符')
             if not isinstance(p['model'],str) or len(p['model'])>200 or (category in ('text','image') and not p['model'].strip()):raise ValueError('需要有效模型名称')
-            for f in ('key_env','secondary_key_env'):
-                if not isinstance(p[f],str) or (p[f] and not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',p[f])):raise ValueError('凭据环境变量名无效')
             if category=='tool':
                 from ..kernel.tools import validate_version
                 from ..kernel.verification import verifier_metadata
@@ -253,7 +255,7 @@ class ProviderConfiguration:
                 validate_version(p['tool_interface_version']);validate_version(p['implementation_version'])
                 p['tool_policy']=tool_policy(p['tool_policy'])
                 p['tool_verifier']=verifier_metadata(p['tool_verifier'])
-                if p['model'] or p['search'] or p['thinking_disabled'] or p['key_env'] or p['secondary_key_env'] or 'secondary_secret' in p:raise ValueError('工具提供者不支持模型字段或环境凭据')
+                if p['model'] or p['search'] or p['thinking_disabled'] or 'secondary_secret' in p:raise ValueError('工具提供者不支持模型字段或次级密钥')
             if category=='tool' and p['adapter']=='builtin':
                 if p['base_url']!='':raise ValueError('builtin 工具地址须为空')
             else:
@@ -274,7 +276,6 @@ class ProviderConfiguration:
             rows[index]=p
         # Disable rather than remove: existing organizations and in-flight jobs keep stable IDs.
         if set(old_by_id)-ids:raise ValueError('已有提供者不可删除，请关闭启用开关')
-        if not any(p['category']=='text' and p['enabled'] and (p.get('_secret_ref') or os.environ.get(p['key_env'])) for p in rows):raise ValueError('至少保留一个已配置凭据的文本提供者')
         return value,secrets
 
     def save(self,revision,value,actor):

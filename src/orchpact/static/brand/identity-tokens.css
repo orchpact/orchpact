@@ -1,0 +1,139 @@
+/* Orchpact 1.0.0 · Generated from tokens.json by validate.py. */
+
+:root {
+  --op-brand-indigo: #262896;
+  --op-brand-lime: #EAFF58;
+  --op-brand-paper: #F7F4EB;
+  --op-brand-ink: #181922;
+}
+
+:root, [data-op-theme="light"] {
+  color-scheme: light;
+  --op-page: #F7F7FA;
+  --op-surface: #FFFFFF;
+  --op-subtle: #EEEFF6;
+  --op-text: var(--op-brand-ink);
+  --op-muted: #505569;
+  --op-line: #D4D7E1;
+  --op-control: #71768A;
+  --op-action: var(--op-brand-indigo);
+  --op-action-hover: #202178;
+  --op-action-active: #171957;
+  --op-on-action: var(--op-brand-paper);
+  --op-link: #3033A3;
+  --op-link-hover: #20216F;
+  --op-link-visited: #684286;
+  --op-selected-bg: #E8E9FF;
+  --op-focus: #4744B8;
+  --op-disabled-bg: #EAEBF0;
+  --op-disabled-fg: #54586A;
+  --op-hero-bg: var(--op-brand-indigo);
+  --op-on-hero: var(--op-brand-paper);
+  --op-delivery-bg: var(--op-brand-lime);
+  --op-on-delivery: var(--op-brand-ink);
+  --op-edge: #60677F;
+  --op-edge-selected: var(--op-brand-indigo);
+  --op-code-bg: #1A1B2B;
+  --op-code-text: #F4F3FA;
+  --op-code-comment: #ABB0C8;
+  --op-code-keyword: #C9C1FF;
+  --op-code-string: #A3E6CC;
+  --op-neutral-fg: #4B5063;
+  --op-neutral-bg: #ECEEF4;
+  --op-info-fg: #214B90;
+  --op-info-bg: #E7EFFF;
+  --op-success-fg: #155B48;
+  --op-success-bg: #E2F4EB;
+  --op-warning-fg: #744600;
+  --op-warning-bg: #FFF0D0;
+  --op-danger-fg: #973037;
+  --op-danger-bg: #FCE8EA;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-op-theme="light"]) {
+    color-scheme: dark;
+    --op-page: #141520;
+    --op-surface: #1D1E2D;
+    --op-subtle: #282A3D;
+    --op-text: #F6F5FA;
+    --op-muted: #B5B7CA;
+    --op-line: #37394D;
+    --op-control: #878BA3;
+    --op-action: #BCBDFF;
+    --op-action-hover: #CFD0FF;
+    --op-action-active: #A9AAF2;
+    --op-on-action: #17182B;
+    --op-link: #BDBEFF;
+    --op-link-hover: #DFDFFF;
+    --op-link-visited: #D8B8ED;
+    --op-selected-bg: #30315A;
+    --op-focus: #C7C5FF;
+    --op-disabled-bg: #272835;
+    --op-disabled-fg: #AFB1C3;
+    --op-hero-bg: var(--op-brand-indigo);
+    --op-on-hero: var(--op-brand-paper);
+    --op-delivery-bg: var(--op-brand-lime);
+    --op-on-delivery: var(--op-brand-ink);
+    --op-edge: #A3A8C0;
+    --op-edge-selected: #CDCCFF;
+    --op-code-bg: #10111B;
+    --op-code-text: #F4F3FA;
+    --op-code-comment: #ABB0C8;
+    --op-code-keyword: #C9C1FF;
+    --op-code-string: #A3E6CC;
+    --op-neutral-fg: #D5D7E5;
+    --op-neutral-bg: #303242;
+    --op-info-fg: #BCD6FF;
+    --op-info-bg: #202F4B;
+    --op-success-fg: #A0E6C8;
+    --op-success-bg: #18382E;
+    --op-warning-fg: #FFDC9E;
+    --op-warning-bg: #412F18;
+    --op-danger-fg: #FFB8BA;
+    --op-danger-bg: #47272E;
+  }
+}
+
+[data-op-theme="dark"] {
+  color-scheme: dark;
+  --op-page: #141520;
+  --op-surface: #1D1E2D;
+  --op-subtle: #282A3D;
+  --op-text: #F6F5FA;
+  --op-muted: #B5B7CA;
+  --op-line: #37394D;
+  --op-control: #878BA3;
+  --op-action: #BCBDFF;
+  --op-action-hover: #CFD0FF;
+  --op-action-active: #A9AAF2;
+  --op-on-action: #17182B;
+  --op-link: #BDBEFF;
+  --op-link-hover: #DFDFFF;
+  --op-link-visited: #D8B8ED;
+  --op-selected-bg: #30315A;
+  --op-focus: #C7C5FF;
+  --op-disabled-bg: #272835;
+  --op-disabled-fg: #AFB1C3;
+  --op-hero-bg: var(--op-brand-indigo);
+  --op-on-hero: var(--op-brand-paper);
+  --op-delivery-bg: var(--op-brand-lime);
+  --op-on-delivery: var(--op-brand-ink);
+  --op-edge: #A3A8C0;
+  --op-edge-selected: #CDCCFF;
+  --op-code-bg: #10111B;
+  --op-code-text: #F4F3FA;
+  --op-code-comment: #ABB0C8;
+  --op-code-keyword: #C9C1FF;
+  --op-code-string: #A3E6CC;
+  --op-neutral-fg: #D5D7E5;
+  --op-neutral-bg: #303242;
+  --op-info-fg: #BCD6FF;
+  --op-info-bg: #202F4B;
+  --op-success-fg: #A0E6C8;
+  --op-success-bg: #18382E;
+  --op-warning-fg: #FFDC9E;
+  --op-warning-bg: #412F18;
+  --op-danger-fg: #FFB8BA;
+  --op-danger-bg: #47272E;
+}

@@ -74,6 +74,7 @@ class Recruit(AgentInput):
     reason: str = Field(min_length=1,max_length=2000)
 
 class PlanNode(Strict):
+    title: str | None = Field(default=None,min_length=1,max_length=120)
     key: str = Field(pattern=r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$')
     kind: Literal['agent','tool','group'] | None = None
     parent: str | None = None

@@ -29,6 +29,12 @@ class WorkflowCatalog:
         with self.db.connect() as c:
             return [self.resolve(c,row['id'],row['revision']) for row in c.execute('SELECT id,revision FROM workflows ORDER BY id')]
 
+    def revisions(self,ctx,workflow):
+        self.admin(ctx)
+        with self.db.connect() as c:
+            return [dict(row) for row in c.execute('''SELECT revision,version,sha256,created
+                FROM workflow_versions WHERE workflow_id=%s ORDER BY revision DESC LIMIT 100''', (workflow,))]
+
     def register(self,ctx,value,revision=0):
         self.admin(ctx);value=validate_definition(value)
         with self.db.tx() as c:

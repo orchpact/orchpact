@@ -161,7 +161,7 @@ def validate_plan(value,tools=None,input_schema=None):
     from .verification import artifact_outputs, verification_policy
     plan=ExecutionPlan.model_validate(value).model_dump()
     for node in plan['nodes']:
-        for field in ('kind','tool_ref','arguments','artifact_outputs','verification'):
+        for field in ('title','kind','tool_ref','arguments','artifact_outputs','verification'):
             if node[field] is None:node.pop(field)
     if len(dumps(plan))>240000:raise ValueError('完整执行计划超过24万字符')
     nodes={n['key']:n for n in plan['nodes']}

@@ -71,8 +71,7 @@ SCHEMA = [
         balance BIGINT NOT NULL DEFAULT 0,
         held BIGINT NOT NULL DEFAULT 0 CHECK(held>=0))""",
     """CREATE TABLE sessions(hash TEXT PRIMARY KEY,
-        user_id TEXT REFERENCES users(id),
-        admin BIGINT NOT NULL DEFAULT 0,
+        user_id TEXT NOT NULL REFERENCES users(id),
         expires DOUBLE PRECISION NOT NULL,
         audience TEXT NOT NULL DEFAULT '')""",
     """CREATE TABLE workspaces(id TEXT PRIMARY KEY,
@@ -491,4 +490,8 @@ MIGRATIONS = [
     ('0003_verification_evidence', VERIFICATION_SCHEMA),
     ('0004_direct_workflows', DIRECT_WORKFLOW_SCHEMA),
     ('0005_tool_approvals', TOOL_APPROVAL_SCHEMA),
+    ('0006_account_sessions', [
+        'DELETE FROM sessions WHERE admin<>0 OR user_id IS NULL',
+        'ALTER TABLE sessions DROP COLUMN admin, ALTER COLUMN user_id SET NOT NULL',
+    ]),
 ]

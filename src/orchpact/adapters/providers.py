@@ -3,7 +3,6 @@ from contextlib import nullcontext
 import base64
 import hashlib
 import json
-import os
 from pathlib import Path
 import threading
 import time
@@ -17,6 +16,10 @@ from ..credits import policy_snapshot, reservation_amount
 from ..search import profile_config, search_request, normalize, merge, public_url, quota_source, source_usage, SearchQuotaExceeded
 from ..json_protocol import decode
 from ..provider_http import bounded_json, write_receipt
+
+class CredentialUnavailable(ValueError):
+    pass
+
 
 class Providers:
     def __init__(self,service):self.service=service;self.db=service.db;self.settings=service.settings
@@ -56,7 +59,9 @@ class Providers:
 
     def credential(self,profile):
         config=getattr(self.service,'configuration',None)
-        return config.secret(profile['credential']) if config and profile.get('credential') else os.environ[profile['key_env']]
+        secret=config.secret(profile.get('credential') or {}) if config else ''
+        if not secret:raise CredentialUnavailable('冻结的提供者没有可用的后台凭据')
+        return secret
 
     def record(self,key,status,usage=None,response_id=None,error=None,c=None):
         with self.db.tx() if c is None else nullcontext(c) as c:
@@ -107,6 +112,7 @@ class Providers:
             system+='\nfiles中每个文件值必须符合以下独立JSON Schema（各自的$ref以该文件结构为根）。必填字段和字段名称以此为准，不能用近义名称替代；说明文字可放在结构允许的其他字段。关闭全部嵌套括号和最外层files/响应对象：\n'+dumps(schema.document_schemas())
         recovered=self.recover_json(ctx,system,context,schema)
         if recovered is not None:return recovered
+        secret=self.credential(profile)
         messages=[dict(role='system',content=system),dict(role='user',content=dumps(context))]
         attempt=ctx['task']['attempt_id'];directory=self.settings.data/'receipts'/attempt;directory.mkdir(parents=True,exist_ok=True)
         for index,tokens in enumerate((16000,24000),1):
@@ -120,7 +126,7 @@ class Providers:
             try:
                 if getattr(self.service,'stop_event',None) and self.service.stop_event.is_set():raise RuntimeError('服务正在停止')
                 with httpx.Client(timeout=httpx.Timeout(120,connect=15),follow_redirects=False,trust_env=False) as client:
-                    response=client.post(profile['base_url'].rstrip('/')+'/chat/completions',headers={'Authorization':'Bearer '+self.credential(profile)},json=body)
+                    response=client.post(profile['base_url'].rstrip('/')+'/chat/completions',headers={'Authorization':'Bearer '+secret},json=body)
                     response.raise_for_status();data=bounded_json(response)
                 choice=data['choices'][0];raw=choice['message'].get('content') or '';reason=choice.get('finish_reason')
                 receipt=dict(request_id=request,model_id=profile['id'],messages=messages,raw=raw,finish_reason=reason,usage=data.get('usage',{}),response_id=data.get('id'))
@@ -248,6 +254,9 @@ class Providers:
 
     def search_call(self,ctx,provider,query,count,operation='search'):
         name=provider['id']
+        try:secret=self.credential(provider)
+        except CredentialUnavailable:
+            return [],dict(provider=name,operation=operation,status='skipped',reason='冻结的提供者没有可用的后台凭据')
         # Reserve each actual engine/fetch call, not each logical query. No hidden retries.
         try:key=self.reserve(ctx,'search','search:'+name+':'+operation)
         except SearchQuotaExceeded:
@@ -259,7 +268,6 @@ class Providers:
         try:
             if getattr(self.service,'stop_event',None) and self.service.stop_event.is_set():raise RuntimeError('服务正在停止')
             with httpx.Client(timeout=45,follow_redirects=False,trust_env=False) as client:
-                secret=self.credential(provider)
                 if operation=='fetch':
                     if name!='deepseek' or not public_url(query):raise ValueError('只允许抓取真实检索返回的公共网页')
                     response=client.post(provider.get('base_url','https://api.deepseek.com/v1/tools/fetch'),headers={'Authorization':'Bearer '+secret},json={'url':query})
@@ -319,13 +327,14 @@ class Providers:
             for aid in request.get('reference_artifact_ids',[]):
                 artifact=self.service.row(c,'artifacts',aid);content=self.service.artifacts.path(artifact).read_bytes()
                 ext,mime=image_format(content);references.append((content,mime));metadata.append(dict(artifact_id=aid,sha256=hashlib.sha256(content).hexdigest()))
+        secret=self.credential(profile)
         key=self.reserve(ctx,'model',profile['id'])
         directory=self.settings.data/'receipts'/ctx['task']['attempt_id'];directory.mkdir(parents=True,exist_ok=True)
         receipt_path=directory/(key+'.json')
         try:
             if getattr(self.service,'stop_event',None) and self.service.stop_event.is_set():raise RuntimeError('服务正在停止')
             with httpx.Client(timeout=httpx.Timeout(240,connect=15),follow_redirects=False,trust_env=False) as client:
-                content,usage,effective=generate(client,profile,self.credential(profile),request,references)
+                content,usage,effective=generate(client,profile,secret,request,references)
             ext,mime=image_format(content)
             write_receipt(receipt_path,dict(request_id=key,model_id=profile['id'],prompt=request['prompt'],negative_prompt=request.get('negative_prompt',''),references=metadata,effective_options=effective,
                 usage=usage,sha256=hashlib.sha256(content).hexdigest(),bytes=len(content),format=ext))

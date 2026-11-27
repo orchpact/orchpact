@@ -3,11 +3,11 @@ from fastapi import Depends, HTTPException, Request, Response, Header, Query
 from pydantic import Field, model_validator
 from typing import Literal
 from ..kernel.models import Strict
-from ..adapters.identity import principal
+from ..adapters.identity import USERNAME_PATTERN, principal
 
 
 class Credentials(Strict):
-    username: str = Field(pattern=r'^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}$')
+    username: str = Field(pattern=USERNAME_PATTERN)
     password: str = Field(min_length=12,max_length=128)
 
 class Registration(Credentials):
@@ -41,11 +41,25 @@ class CreditSettlement(Strict):
     reason: str = Field(min_length=1,max_length=500)
 
 
-def install(app,access,auth,admin,cookie,origin,audience=lambda request: "",credit_policy=None,provider_prices=lambda:[]):
+def install(app,access,auth,admin,cookie,origin,local_setup,audience=lambda request: "",credit_policy=None,provider_prices=lambda:[]):
     def guard(request, username=''):
         origin(request)
         access.throttle('ip:'+(request.client.host if request.client else 'unknown'),limit=30)
         if username:access.throttle('user:'+username.lower(),limit=12)
+
+    @app.get('/api/v1/auth/setup')
+    def setup_status(request: Request):
+        state = access.setup_state()
+        return dict(required=state != 'complete', available=state == 'first' and local_setup(request))
+
+    @app.post('/api/v1/auth/setup',status_code=201)
+    def setup(data: Credentials, request: Request, response: Response):
+        if not local_setup(request):
+            raise HTTPException(403, '请在实例本机创建首个账号')
+        guard(request,data.username)
+        actor = access.setup_admin(data.username,data.password)
+        cookie(response,request,access.session(actor.user_id,audience(request)))
+        return {'ok':True}
 
     @app.post('/api/v1/auth/login')
     def login(data:Credentials,request:Request,response:Response):
@@ -187,6 +201,7 @@ def install(app,access,auth,admin,cookie,origin,audience=lambda request: "",cred
         with access.db.connect() as c:
             return [dict(r,credits=access.wallets.view(c,r['id'])) for r in c.execute('''
                 SELECT u.id,u.username,u.disabled,u.created,u.password_set,
+                  u.id=(SELECT value FROM instance_metadata WHERE key='admin_user') AS admin,
                   (SELECT COUNT(*) FROM workspaces w WHERE w.owner_id=u.id) AS owned_spaces,
                   (SELECT COUNT(*) FROM workspace_members m JOIN workspaces w ON w.id=m.workspace_id
                     WHERE m.user_id=u.id AND w.owner_id!=u.id) AS joined_spaces
@@ -212,6 +227,8 @@ def install(app,access,auth,admin,cookie,origin,audience=lambda request: "",cred
     @app.patch('/api/v1/admin/users/{user}',dependencies=[Depends(admin)])
     def disable(user:str,data:Enabled,request:Request):
         with access.db.tx() as c:
+            if data.disabled and user == principal.get().user_id:
+                raise HTTPException(409,'不能停用实例管理员')
             old=c.execute('SELECT disabled FROM users WHERE id=%s',(user,)).fetchone()
             if not old:raise HTTPException(404,'账号不存在')
             c.execute('UPDATE users SET disabled=%s WHERE id=%s',(int(data.disabled),user))

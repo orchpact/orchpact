@@ -93,7 +93,7 @@ def validate_definition(value):
             fields(plan, {'nodes','result_node','max_repairs','staffing'}, '工作流计划')
             if not isinstance(plan.get('nodes'), list):raise ValueError('计划须声明 nodes')
             for node in plan['nodes']:
-                fields(node, {'key','kind','parent','unit','staff','participants','tool_ref','arguments','artifact_outputs','verification','description','expected','depends_on','outputs','rules','exports','gate','repair_from'}, '工作流节点')
+                fields(node, {'key','title','kind','parent','unit','staff','participants','tool_ref','arguments','artifact_outputs','verification','description','expected','depends_on','outputs','rules','exports','gate','repair_from'}, '工作流节点')
                 if node.get('staff') is not None:fields(node['staff'], STAFF, '节点角色')
     declared_tools = set(resources.get('tools', {}))
     approved_tools = {key for key, tool in resources.get('tools', {}).items() if tool.get('requires_approval')}
