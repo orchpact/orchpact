@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 import zipfile
-from .database import ident, now, dumps
+from .database import ident, now, dumps, loads
 
 from ..kernel.files import MAX_BYTES, MAX_FILES, text_name, encode_files
 
@@ -70,7 +70,9 @@ class Artifacts:
         """Read only platform-published artifacts, bounded before decompression."""
         path=self.path(artifact)
         if hashlib.sha256(path.read_bytes()).hexdigest()!=artifact['sha256']:raise ValueError('交付哈希不匹配')
-        if artifact['media_type']=='application/zip':
+        # A tool can deliver an ordinary ZIP as one file. Only expand an
+        # archive that the publisher created from multiple manifest entries.
+        if artifact['media_type']=='application/zip' and len(loads(artifact['manifest'])) > 1:
             with zipfile.ZipFile(path) as archive:
                 entries=archive.infolist()
                 if len(entries)>MAX_FILES or sum(e.file_size for e in entries)>MAX_BYTES:raise ValueError('引用交付超过文件数或大小限制')

@@ -1,5 +1,9 @@
 """Deterministic tool nodes without models, CrewAI objects or external network."""
+from base64 import b64encode
 from copy import deepcopy
+from hashlib import sha256
+from io import BytesIO
+from zipfile import ZipFile
 import unittest
 from unittest.mock import patch
 
@@ -290,6 +294,37 @@ class ToolNodeTests(KernelFixture):
         with self.s.db.connect() as c:
             snapshots=[loads(row[0]) for row in c.execute("SELECT snapshot FROM tasks WHERE kind='work'")]
         self.assertEqual({next(iter(snapshot['tools'])) for snapshot in snapshots},{'source','final'})
+
+    def test_single_zip_is_preserved_as_the_binary_root_delivery(self):
+        file = 'handover.zip'
+        media = {'media_type': 'application/zip', 'max_bytes': 100000}
+        stage = node(path=file, outputs={}, artifact_outputs={file: media})
+        value = workflow([stage], effect='create_artifact')
+        renderer = value['resources']['tools']['renderer']
+        renderer['artifact_contract']['media_types'] = ['application/zip']
+        renderer['output_schema'] = {
+            'type': 'object', 'required': ['artifacts'],
+            'properties': {'artifacts': {'type': 'object', 'required': [file], 'properties': {file: {'type': 'object'}}}},
+        }
+        operation = value['operations']['generate']
+        operation.pop('output_schema')
+        operation.update(output_kind='artifact', output_file=file, artifact_output=media)
+        stream = BytesIO()
+        with ZipFile(stream, 'w') as archive:
+            archive.writestr('acceptance.txt', 'accepted test')
+            archive.writestr('source.csv', 'serial\nAX-01')
+        data = stream.getvalue()
+        self.synthetic.result = {'artifacts': {file: {
+            'media_type': 'application/zip', 'sha256': sha256(data).hexdigest(), 'data_base64': b64encode(data).decode(),
+        }}}
+        self.install(value)
+        run = self.invoke()
+        self.assertTrue(self.app.state.runner.step())
+        view = self.view(run)
+        self.assertEqual(view['status'], 'completed')
+        self.assertIsNone(view['result'])
+        result = self.client.get('/api/v1/artifacts/' + view['artifact_id'] + '/download')
+        self.assertEqual(result.content, data)
 
     def test_tool_success_does_not_bypass_delivery_contract(self):
         value=workflow(relaxed=True);self.install(value)
